@@ -6,11 +6,6 @@ library("parallel")
 library(XLConnect)
 library(ggplot2)
 
-medianDT <- function(x) x/median(x,na.rm=TRUE)
-
-#TODO Move these functions into the MEMA package
-
-
 kmeansClusterEdUPositiveWellPlate <- function(x,value){
   EdUPos <- kmeansCluster(log2(x[[value]]))
   edUPositiveThresh <- min(x[[value]][EdUPos==2])
@@ -19,13 +14,11 @@ kmeansClusterEdUPositiveWellPlate <- function(x,value){
   return(clusters)
 }
 
-
 fixedThreshEdUPositive <- function(x,value,thresh){
   clusters <- rep.int(1,nrow(x))
   clusters[x[[value]]>thresh] <- 2
   return(clusters)
 }
-
 
 readWellMetadata <- function (xlsFile) 
 {
@@ -125,7 +118,7 @@ getWellSubsetFileNames <- function(path){
   rdFiles$Wells <- gsub("W","",splits[,4])
   rdFiles$Location <- gsub(".txt","",splits[,5])
   rdFiles$CellLine <- splits[,2]
-  rdFiles$PlateType <- as.integer(strsplit2(rdFiles$Barcode,"")[,7])
+  rdFiles$Plate <- as.integer(strsplit2(rdFiles$Barcode,"")[,7])
   return(rdFiles)
 }
 
@@ -135,6 +128,7 @@ stitchWellData <- function(fs){
     cdt <- fread(gsub("Main","Cyto",fa["FilePaths"]))
     mdt$Barcode <- fa["Barcode"]
     mdt$CellLine <- fa["CellLine"]
+    mdt$Plate <- fa["Plate"]
     mdt <- convertColumnNames(mdt)
     cdt <- convertColumnNames(cdt)
     setnames(cdt,grep("Intensity",colnames(cdt),value=TRUE), paste0(grep("Intensity",colnames(cdt),value=TRUE),"Cyto"))
@@ -149,6 +143,7 @@ stitchWellData <- function(fs){
 }
 
 #########
+rawDataVersion <- "v1.0"
 
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
@@ -158,6 +153,13 @@ cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
   bdf <- df[df$Barcode==barcode,]
   bDT <- stitchWellData(fs=bdf)
 }, df=rdf))
+
+#Add row and column indices
+cDT$Row <- ceiling(cDT$Well/24)
+cDT$Column <- (cDT$Well-1) %% 24 + 1
+
+#Convert well index to an alphanumeric label
+cDT$Well <- wellAN(16,24)[cDT$Well]
 
 densityThresh <- 0.4
 outerThresh <- 0.5
@@ -172,83 +174,43 @@ cDT <- cDT[cDT$Area >nuclearAreaThresh,]
 
 cDT$TotalIntensityDAPI <- cDT$Area*cDT$MeanIntensityDAPI
 
-#Add row and column indices
-cDT$Row <- ceiling(cDT$Well/24)
-cDT$Column <- (cDT$Well-1) %% 24 + 1
+#Read in siRNA location and annotations
+siRNAs <- readWorksheetFromFile("./Metadata/LH_2015Oct384 G-CUSTOM-185752.xls", sheet="Sequences_by_Ord_w384ShippingRa",startRow=3, header=TRUE)
+siRNAs <- convertColumnNames(data.table(siRNAs))
+siRNAs$Plate <- gsub("Plate ","",siRNAs$Plate)
+siRNAs <- unique(siRNAs[,list(Plate,Well,GeneSymbol,GENEID,GeneAccession,GINumber,PoolCatalogNumber)])
+siRNAs$GeneSymbol[grepl("ON-TARGET",siRNAs$GeneSymbol)] <- "NegCtrl"
 
-# #Read in anotations for the gene class
-# geneAnn <- data.table(read.xls("2015June_pilot-sirna-screen-v4-1.xlsx"),key="Gene")
-# setkey(cDT,GeneSymbol)
-# cDT <- cDT[geneAnn]
-
-normToGeneSymbol <- function(DT, value, baseGeneSymbol) {
-  if(!c("GeneSymbol") %in% colnames(DT)) stop(paste("DT must contain a GeneSymbol column."))
-  valueMedian <- median(unlist(DT[grepl(baseGeneSymbol, DT$GeneSymbol),value, with=FALSE]), na.rm = TRUE)
-  normedValues <- DT[,value,with=FALSE]/valueMedian
-  return(normedValues)
-}
-
-# 
-#   cDT <- cDT[,MeanIntensityAlexa488WellNorm := normToGeneSymbol(.SD,value = "MeanIntensityAlexa488Cyto",baseGeneSymbol = "NegCtrl"), by="CellLine"]
-#   cDT <- cDT[,CytoMeanIntensityAlexa555WellNorm := normToGeneSymbol(.SD,value = "MeanIntensityAlexa555Cyto",baseGeneSymbol = "NegCtrl"), by="CellLine"]
-#   cDT <- cDT[,MeanIntensityAlexa647WellNorm := normToGeneSymbol(.SD,value = "MeanIntensityAlexa647",baseGeneSymbol = "NegCtrl"), by="CellLine"]
-#   cDT$LineageRatio <- cDT$CytoMeanIntensityAlexa488/cDT$CytoMeanIntensityAlexa555
-#   #Classify each cell based on the plate EdU levels
-#   #TODO: add control gene ID to crate gate value
-#   cDT <- cDT[,EdUPositive := kmeansClusterEdUPositiveWellPlate(.SD, value="MeanIntensityAlexa647"), by="Barcode"]
-#   #Calculate the EdU Positive Proportion at each well
-#   cDT <- cDT[,EdUPositiveProportion := sum(EdUPositive)/length(EdUPositive),by="Barcode,Well"]
+#Add siRNA annotations to the cell level data
+setkey(siRNAs,Plate,Well)
+setkey(cDT,Plate,Well)
+cDT <- siRNAs[cDT]
 
 #Summarize cell data to well level by taking the medians of these parameters
-wNames<-grep(pattern="(Total|Mean|Area|EdUPositiveProportion|Cyto|Density|Z|X53BP1|WellCellCount|Barcode|^Spot$|^Well$)",x=names(cDT),value=TRUE)
+wNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
 #Remove the well normalized values as the median is 1 by definition
 wNames <- grep("WellNorm",x=wNames, value=TRUE, invert=TRUE)
 wKeep<-cDT[,wNames,with=FALSE]
 wDT<-wKeep[,lapply(.SD,numericMedian),keyby="Barcode,Well"]
 
 #Merge back in the well and plate metadata
-mDT <- cDT[,grep("Barcode|^Well$|CellLine|WellIndex|Row|Column|GeneSymbol|EndpointDAPI|Endpoint488|Endpoint555|Endpoint647|Class|Drugs..FDA.Approved.|Drugs..Kinase.Inhibitors.|Drugs..Perturbagen.Signatures.|Pathways..Hallmark.Gene.Sets.|Pathways..KEGG.Pathways.|Pathways..Nature.PID.Pathways.",colnames(cDT),value=TRUE), with=FALSE]
+mDT <- cDT[,c("Barcode","Well",setdiff(colnames(cDT),wNames)), with=FALSE]
 setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT, mult="first"]
 
-ggplot(wDT, aes(x=Column, y=Row, colour=WellCellCount))+
-  geom_point()+
-  facet_wrap(~Barcode)
-
-# #Calculate CVs for each set of replicates in the ScanR data
-# cvNames<-grep(pattern="(Intensity|Area|SpotCellCount|Population|EdUPositivePercent|Barcode|^Name$|^Well$)",x=names(slDT),value=TRUE)
-# cvKeep<-slDT[,cvNames,with=FALSE]
-# repSpots<-c('Name','Well','Barcode')
-# cv<-cvKeep[,lapply(.SD,CV),by=repSpots]
-# data.table::setnames(cv,colnames(cv), paste0("CV.",colnames(cv)))
-# data.table::setkey(cv,CV.Well,CV.Name, CV.Barcode)
-# data.table::setkey(slDT,Well,Name,Barcode)
-# slDT <- slDT[cv]
+#Add metadata that keeps PBS wells from combining
 
 #Summarize well data to replicate level by taking the medians of these parameters
-repNames<-grep(pattern="(Total|Mean|Area|EdUPositiveProportion|Cyto|Density|Z|X53BP1|WellCellCount|Barcode|^Spot$|GeneSymbol)",x=names(slDT),value=TRUE)
-repKeep<-slDT[,repNames,with=FALSE]
+repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|EdUPositiveProportion|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
+repKeep<-wDT[,repNames,with=FALSE]
 repDT<-repKeep[,lapply(.SD,numericMedian),keyby="Barcode,GeneSymbol"]
 
 #Merge back in the well and plate metadata
-mDT <- slDT[,list(CellLine,WellIndex,Row,Column,GeneSymbol,EndpointDAPI,Endpoint488,Endpoint555,Endpoint647,Class,Drugs..FDA.Approved.,Drugs..Kinase.Inhibitors.,Drugs..Perturbagen.Signatures.,Pathways..Hallmark.Gene.Sets.,Pathways..KEGG.Pathways.,Pathways..Nature.PID.Pathways.),keyby="Barcode,GeneSymbol"]
+mDT <- wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),repNames)), with=FALSE]
+setkey(mDT,Barcode,GeneSymbol)
 repDT <- mDT[repDT, mult="first"]
 
-repDT <- repDT[,WellCellCountRobustZScore := robustZScores(WellCellCount), by=Barcode]
-repDT <- repDT[,CytoMeanIntensityAlexa488RobustZScore := robustZScores(CytoMeanIntensityAlexa488), by=Barcode]
-repDT <- repDT[,CytoMeanIntensityAlexa555RobustZScore := robustZScores(CytoMeanIntensityAlexa555), by=Barcode]
-
-# #Calculate CVs for each set of replicates in the ScanR data
-# cvNames<-grep(pattern="(Intensity|Area|SpotCellCount|Population|EdUPositivePercent|Barcode|^Name$|^Well$)",x=names(slDT),value=TRUE)
-# cvKeep<-slDT[,cvNames,with=FALSE]
-# repSpots<-c('Name','Well','Barcode')
-# cv<-cvKeep[,lapply(.SD,CV),by=repSpots]
-# data.table::setnames(cv,colnames(cv), paste0("CV.",colnames(cv)))
-# data.table::setkey(cv,CV.Well,CV.Name, CV.Barcode)
-# data.table::setkey(slDT,Well,Name,Barcode)
-# slDT <- slDT[cv]
-# 
-# Cleanup and write
-# write.table(cDT, paste0(ss,"/Cell/Annotated Data/",ss,"_","CellAnn.txt"), sep = "\t",row.names = FALSE, quote=FALSE)
-# write.table(wDT, paste0(ss,"/Cell/Annotated Data/",ss,"_","CellWellAnn.txt"), sep = "\t",row.names = FALSE, quote=FALSE)
-# write.table(repDT, paste0(ss,"/Cell/Annotated Data/",ss,"_","CellRepAnn.txt"), sep = "\t",row.names = FALSE, quote=FALSE)
+#Write data to disk
+write.table(cDT, paste0("AtwatersCell_",rawDataVersion,".txt"), sep = "\t",row.names = FALSE, quote=FALSE)
+write.table(wDT, paste0("AtwatersWell_",rawDataVersion,".txt"), sep = "\t",row.names = FALSE, quote=FALSE)
+write.table(repDT, paste0("AtwatersRep_",rawDataVersion,".txt"), sep = "\t",row.names = FALSE, quote=FALSE)
