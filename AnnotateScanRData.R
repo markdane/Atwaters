@@ -142,6 +142,28 @@ stitchWellData <- function(fs){
   #TODO: Add check for redundant well data
 }
 
+annotateCellSeedWells <- function(dt){
+  # First and last columns with cells 1:2 serial dilution as 
+  #A  CSCtrlA
+  #B(1/2 #A) CSCtrlB
+  #C(1/4 #A) CSCtrlC
+  #D(1/8 #A) CSCtrlD
+  #the rest of wells with same as A. 
+  CSCtrlAWells <- c(paste0("A0",1:9),paste0("A",10:24),
+                    paste0("P0",2:9),paste0("P",10:23),
+                    "E01","E24","I01","I24","M01","M24")
+  
+  CSCtrlBWells <- c("B01","B24","F01","F24","J01","J24","N01","N24")
+  CSCtrlCWells <- c("C01","C24","G01","G24","K01","K24","O01","O24")
+  CSCtrlDWells <- c("D01","D24","H01","H24","L01","L24","P01","P24")
+  
+  dt$GeneSymbol[dt$Well %in% CSCtrlAWells] <- "CSCtrlA"
+  dt$GeneSymbol[dt$Well %in% CSCtrlBWells] <- "CSCtrlB"
+  dt$GeneSymbol[dt$Well %in% CSCtrlCWells] <- "CSCtrlC"
+  dt$GeneSymbol[dt$Well %in% CSCtrlDWells] <- "CSCtrlD"
+  return(dt$GeneSymbol)
+}
+
 #########
 rawDataVersion <- "v1.0"
 
@@ -186,8 +208,14 @@ setkey(siRNAs,Plate,Well)
 setkey(cDT,Plate,Well)
 cDT <- siRNAs[cDT]
 
+#Add labels to cell seeding wells
+cDT$GeneSymbol <- annotateCellSeedWells(cDT[,list(GeneSymbol,Well)])
+
+#Create a lineageRatio signal for each cell KRT19/KRT5 luminal/basal
+cDT$LineageRatio <- log2((cDT$MeanIntensityAlexa555Cyto+1)/(cDT$MeanIntensityAlexa488Cyto+1))
+
 #Summarize cell data to well level by taking the medians of these parameters
-wNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
+wNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
 #Remove the well normalized values as the median is 1 by definition
 wNames <- grep("WellNorm",x=wNames, value=TRUE, invert=TRUE)
 wKeep<-cDT[,wNames,with=FALSE]
@@ -198,10 +226,8 @@ mDT <- cDT[,c("Barcode","Well",setdiff(colnames(cDT),wNames)), with=FALSE]
 setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT, mult="first"]
 
-#Add metadata that keeps PBS wells from combining
-
 #Summarize well data to replicate level by taking the medians of these parameters
-repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|EdUPositiveProportion|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
+repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
 repKeep<-wDT[,repNames,with=FALSE]
 repDT<-repKeep[,lapply(.SD,numericMedian),keyby="Barcode,GeneSymbol"]
 

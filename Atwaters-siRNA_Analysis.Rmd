@@ -34,7 +34,8 @@ barcodes <- unique(repDT$Barcode)
 
 
 ```{r WCC_byCellLine, fig.width=8,fig.height=5, eval=TRUE}
-p <- ggplot(wDT, aes(x=Barcode, y = WellCellCount))+geom_boxplot()+
+
+p <- ggplot(wDT, aes(x=Barcode, y = WellCellCount,colour=wDT$GeneSymbol=="NegCtrl"))+geom_boxplot()+
   ggtitle("Nuclei per Well by Plate")+
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
