@@ -25,7 +25,7 @@ source("WellPlateFunctions.R")
 
 WCCThresh <- 500
 
-cDT <- fread("AtwatersCell_v1.0.txt")
+cDT <- fread("AtwatersCell_v1.0.txt",showProgress=FALSE)
 wDT <- fread("AtwatersWell_v1.0.txt")
 repDT <- fread("AtwatersRep_v1.0.txt")
 barcodes <- unique(repDT$Barcode)
@@ -34,49 +34,50 @@ barcodes <- unique(repDT$Barcode)
 
 
 ```{r WCC_byCellLine, fig.width=8,fig.height=5, eval=TRUE}
-
-p <- ggplot(wDT, aes(x=Barcode, y = WellCellCount,colour=wDT$GeneSymbol=="NegCtrl"))+geom_boxplot()+
-  ggtitle("Nuclei per Well by Plate")+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+dt <- wDT[wDT$GeneSymbol %in% c("NegCtrl","CSCtrlA","CSCtrlB","CSCtrlC","CSCtrlD"),]
+p <- ggplot(dt, aes(x=GeneSymbol, y=WellCellCount, colour=Barcode))+geom_boxplot()+
+  ggtitle("Nuclei of Control Wells by Plate")+
+  facet_wrap(~CellLine, scales = "free_y")+
+  guides(colour=guide_legend(ncol=2))+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)))
 print(p)
 
 ```
 
-```{r UnivariateSignals , fig.width=8,fig.height=20, eval=TRUE}
-set.seed(1234)
-DT <- cDT[!is.na(cDT$GeneSymbol)]
-DT <-DT[!grepl("NegCtrl",DT$GeneSymbol)]
-DT <- DT[sample(1:nrow(DT),.05*nrow(DT), replace=FALSE)]
-p <- ggplot(DT, aes(x=TotalIntensityDAPI))+
-  geom_histogram(binwidth=10000)+
-  coord_cartesian(xlim=quantile(DT$TotalIntensityDAPI,c(.02,.98)))+
-  ggtitle("Total DAPI Distribution")+
-  facet_wrap(~GeneSymbol, ncol=5)+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+```{r UnivariateSignals , fig.width=5,fig.height=3, eval=TRUE}
+
+DT <- cDT[grepl("NegCtrl",cDT$GeneSymbol)]
+p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=as.factor(DNA2N),colour=as.factor(DNA2N)))+
+  geom_histogram(binwidth=1000, position="dodge")+
+  coord_cartesian(xlim=quantile(DT$TotalIntensityDAPI,c(.02,.99)))+
+  ggtitle("Total DAPI Distribution in Negative Control Wells")+
+  facet_grid(CellLine~Plate, scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
+  theme(strip.text = element_text(size = rel(.8)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
-p <- ggplot(DT, aes(x=MeanIntensityAlexa488Cyto))+
-  geom_histogram(binwidth=10000)+
-  coord_cartesian(xlim=quantile(DT$MeanIntensityAlexa488Cyto,c(.02,.98)))+
+p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa488Cyto+1)))+
+  geom_histogram(binwidth=.01)+
+  xlab("Mean Intensity KRT5 (logged)")+
   ggtitle("KRT5 Distribution")+
-  facet_wrap(~GeneSymbol, ncol=5)+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
+  theme(strip.text = element_text(size = rel(.8)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
-p <- ggplot(DT, aes(x=MeanIntensityAlexa555Cyto))+
-  geom_histogram(binwidth=10000)+
-  coord_cartesian(xlim=quantile(DT$MeanIntensityAlexa555Cyto,c(.02,.98)))+
-  ggtitle("KRT19 Distribution")+
-  facet_wrap(~GeneSymbol, ncol=5)+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa555Cyto+1)))+
+  geom_histogram(binwidth=.01)+
+  #coord_cartesian(xlim=quantile(DT$MeanIntensityAlexa555Cyto,c(.02,.97)))+
+  xlab("Mean Intensity KRT19 (logged)")+
+  ggtitle("KRT19 Distribution (logged)")+
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
+  theme(strip.text = element_text(size = rel(.8)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
-p <- ggplot(DT, aes(x=MeanIntensityAlexa647))+
-  geom_histogram(binwidth=10000)+
-  coord_cartesian(xlim=quantile(DT$MeanIntensityAlexa647,c(.02,.98)))+
-  ggtitle("EdU Distribution")+
-  facet_wrap(~GeneSymbol, ncol=5)+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa647+1)))+
+  geom_histogram(binwidth=.01)+
+  xlab("Mean Intensity EdU (logged)")+
+  ggtitle("EdU Distribution (logged)")+
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
+  theme(strip.text = element_text(size = rel(.8)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
 
@@ -84,15 +85,21 @@ print(p)
 
 
 ```{r replicate_WCC_byBarcode, fig.width=8,fig.height=3.5, eval=TRUE}
+
 for (barcode in barcodes){
+  #cellLine <- strsplit(barcode,"_")[[1]][3]
   setkey(repDT,Barcode)
   DT <- repDT[barcode]
-  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WellCellCount))+    
+  seWCCN <- wDT[,list(se=sd(WellCellCountNorm)/sqrt(.N)), by=GeneSymbol]
+  DT <- merge(DT,seWCCN,by="GeneSymbol")
+  p <- ggplot(DT, aes(x=factor(relevel(reorder(GeneSymbol, WellCellCountNorm, FUN=median),ref="NegCtrl")), y=WellCellCountNorm))+    
     geom_bar(stat="identity", fill="gray30")+ 
-    ggtitle(paste("Median Replicate Nuclei Count in",barcode))+
+    geom_errorbar(aes(ymax=WellCellCountNorm+se, ymin=WellCellCountNorm-se),position="dodge", width=0.25)+
+    geom_hline(yintercept=1, colour="blue")+
+    ggtitle(paste("Median Replicate Nuclei Count Normalized to NegCtrl in",barcode))+
     xlab("")+ylab("")+
-    facet_grid(Barcode~., scales="free")+
-    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+    facet_grid(CellLine~Barcode, scales="free")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   print(p)
 }
 
@@ -100,51 +107,72 @@ for (barcode in barcodes){
 
 
 
-```{r,  fig.width=8, fig.height=4}
+```{r lineageRatio_byBarcode, fig.width=8,fig.height=3.5, eval=TRUE}
 
-  setkey(cDT,GeneSymbol)
-  DT <- cDT[c("PLK1","NegCtrl")]
-  
-  p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
-    geom_density(alpha=.2)+    
-    ggtitle(paste("Controls Density Analysis of Nuclei Count for Atwaters Plates"))+
-    xlab("")+ylab("Nuclei Count Density")+
-    facet_wrap(~Barcode)+
-    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+for (barcode in barcodes){
+  #cellLine <- strsplit(barcode,"_")[[1]][3]
+  setkey(repDT,Barcode)
+  DT <- repDT[barcode]
+  seLR <- wDT[,list(se=sd(LineageRatioNorm)/sqrt(.N)), by=GeneSymbol]
+  DT <- merge(DT,seLR,by="GeneSymbol")
+  p <- ggplot(DT, aes(x=factor(relevel(reorder(GeneSymbol, LineageRatioNorm, FUN=median),ref="NegCtrl")), y=LineageRatioNorm))+    
+    geom_bar(stat="identity", fill="gray30")+ 
+    geom_errorbar(aes(ymax=LineageRatioNorm+se, ymin=LineageRatioNorm-se),position="dodge", width=0.25)+
+    #geom_hline(yintercept=1, colour="blue")+
+    ggtitle(paste("Lineage Ratio Normalized to NegCtrl in",barcode))+
+    xlab("")+ylab("")+
+    facet_grid(CellLine~Barcode, scales="free")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   print(p)
+}
 
 ```
+```{r cellCycle}
 
-
-
-```{r, eval=TRUE}
-
-p <- ggplot(repDT, aes(x=WellCellCount))+
-  geom_histogram(binwidth=100)+
-  facet_wrap(~CellLine)+
-  ggtitle(paste("Well Cell Count"))
-print(p)
-
-p <- ggplot(repDT, aes(x=MeanIntensityAlexa488Cyto))+
-  geom_histogram(binwidth=.1)+
-  facet_wrap(~CellLine)+
-  ggtitle(paste("KRT5"))
-print(p)
-
-p <- ggplot(repDT, aes(x=MeanIntensityAlexa555Cyto))+
-  geom_histogram(binwidth=.1)+
-  facet_wrap(~CellLine)+
-  ggtitle(paste("KRT19"))
-print(p)
-
-p <- ggplot(repDT, aes(x=MeanIntensityAlexa647))+
-  geom_histogram(binwidth=5)+
-  facet_wrap(~CellLine)+
-  ggtitle(paste("EdU"))
+p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=TotalIntensityDAPI, y=log2(MeanIntensityAlexa647+1), colour=EduPositive))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  facet_grid(CellLine~Plate,scales = "free_y", labeller = labeller(Plate = label_both, CellLine = label_value))
 print(p)
 
 ```
 
+```{r spectral}
+
+p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityDAPI+1), y=log2(MeanIntensityAlexa488Cyto+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityAlexa488Cyto+1), y=log2(MeanIntensityAlexa555Cyto+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityAlexa555Cyto+1), y=log2(MeanIntensityAlexa647+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+```
+
+```{r,  fig.width=8, fig.height=3}
+
+setkey(cDT,GeneSymbol)
+DT <- cDT[c("PLK1","NegCtrl")]
+
+p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
+  geom_density(alpha=.2)+    
+  ggtitle(paste("Controls Density Analysis of Nuclei Count for Atwaters Plates"))+
+  xlab("")+ylab("Nuclei Count Density")+
+  facet_grid(CellLine~Plate)+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+```
 
 
 ```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
@@ -154,14 +182,14 @@ for (barcode in unique(wDT$Barcode)){
   DT <- wDT[barcode]
   
   p <- ggplot(DT, aes(x=Column, y=Row, colour=WellCellCount))+
-    geom_point(size=6)+
-    ylim(8,1)+
-    scale_x_continuous(breaks=c(1:12))+
+    geom_point(size=4)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
     scale_colour_gradient(low = "white", high = "red")+
     guides(colour = guide_legend("Well Cell Count", keywidth = .5, keyheight = .5))+
     ggtitle(paste("Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
     xlab("")+ylab("")+
-    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.5)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   suppressWarnings(print(p))
   
 }
@@ -169,15 +197,16 @@ for (barcode in unique(wDT$Barcode)){
 ```
 
 
-```{r Layout, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
+```{r Layout, echo=FALSE, fig.width=6,fig.height=2, eval=TRUE}
 
 p <- ggplot(wDT, aes(x=Column, y=Row, colour=GeneSymbol))+
-  geom_point(size=4)+
-  scale_y_reverse(breaks=c(8:1))+
-  scale_x_continuous(breaks=c(1:12))+
-  guides(colour = guide_legend("Gene Symbol", keywidth = .5, keyheight = .5, ncol=2))+
+  geom_point(size=2)+
+  scale_y_reverse(breaks=c(16:1))+
+  scale_x_continuous(breaks=c(1:24))+
+  guides(colour=FALSE)+
   ggtitle(paste("Well Plate Layout"))+
-  xlab("")+ylab("")
+  xlab("")+ylab("")+
+  facet_wrap(~Plate)
 print(p)
 
 ```

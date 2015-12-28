@@ -149,10 +149,7 @@ annotateCellSeedWells <- function(dt){
   #C(1/4 #A) CSCtrlC
   #D(1/8 #A) CSCtrlD
   #the rest of wells with same as A. 
-  CSCtrlAWells <- c(paste0("A0",1:9),paste0("A",10:24),
-                    paste0("P0",2:9),paste0("P",10:23),
-                    "E01","E24","I01","I24","M01","M24")
-  
+  CSCtrlAWells <- unique(dt$Well[is.na(dt$GeneSymbol)])
   CSCtrlBWells <- c("B01","B24","F01","F24","J01","J24","N01","N24")
   CSCtrlCWells <- c("C01","C24","G01","G24","K01","K24","O01","O24")
   CSCtrlDWells <- c("D01","D24","H01","H24","L01","L24","P01","P24")
@@ -163,6 +160,38 @@ annotateCellSeedWells <- function(dt){
   dt$GeneSymbol[dt$Well %in% CSCtrlDWells] <- "CSCtrlD"
   return(dt$GeneSymbol)
 }
+
+# normToNegCtrl <- function(dt){
+#   WCCNegCtrl <- median(dt$WellCellCount[dt$GeneSymbol=="NegCtrl"],na.rm=TRUE)+1
+#   return(dt$WellCellCount/WCCNegCtrl)
+# }
+
+normToNegCtrl <- function(dt){
+  negCtrlMedian <- median(unlist(dt[,1,with=FALSE][dt$GeneSymbol=="NegCtrl"]),na.rm=TRUE)
+  return(dt[,1,with=FALSE]/negCtrlMedian)
+}
+
+normToLogNegCtrl <- function(dt){
+  negCtrlMedian <- median(unlist(dt[,1,with=FALSE][dt$GeneSymbol=="NegCtrl"]),na.rm=TRUE)+.01
+  return(dt[,1,with=FALSE]-negCtrlMedian)
+}
+
+#Todo Move kmeansDNACluster fix into MEMA package 
+kmeansDNACluster <- function (x, centers = 2) 
+{
+  if(length(x) == 1) return(1L)
+  x <- data.frame(x)
+  xkmeans <- kmeans(x, centers = centers)
+  if (centers == 2) {
+    if (xkmeans$centers[1] > xkmeans$centers[2]) {
+      tmp <- xkmeans$cluster == 1
+      xkmeans$cluster[xkmeans$cluster == 2] <- 1L
+      xkmeans$cluster[tmp] <- 2L
+    }
+  }
+  return(xkmeans$cluster)
+}
+
 
 #########
 rawDataVersion <- "v1.0"
@@ -214,6 +243,40 @@ cDT$GeneSymbol <- annotateCellSeedWells(cDT[,list(GeneSymbol,Well)])
 #Create a lineageRatio signal for each cell KRT19/KRT5 luminal/basal
 cDT$LineageRatio <- log2((cDT$MeanIntensityAlexa555Cyto+1)/(cDT$MeanIntensityAlexa488Cyto+1))
 
+#Label cells DNA 2N, 4N and EdU state
+#Gate each well DAPI signal independently
+#Set 2N and 4N DNA status
+cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode,Well"]
+
+cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
+cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
+
+#Logit transform DNA Proportions
+#logit(p) = log[p/(1-p)]
+if(any(grepl("DNA2NProportion",colnames(cDT)))){
+  DNA2NImpute <- cDT$DNA2NProportion
+  DNA2NImpute[DNA2NImpute==0] <- .01
+  DNA2NImpute[DNA2NImpute==1] <- .99
+  cDT$DNA2NProportionLogit <- log2(DNA2NImpute/(1-DNA2NImpute))
+}
+
+if(any(grepl("DNA4NProportion",colnames(cDT)))){
+  DNA4NImpute <- cDT$DNA4NProportion
+  DNA4NImpute[DNA4NImpute==0] <- .01
+  DNA4NImpute[DNA4NImpute==1] <- .99
+  cDT$DNA4NProportionLogit <- log2(DNA4NImpute/(1-DNA4NImpute))
+}
+
+cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode,Well"]
+#Calculate the EdU Positive Percent at each spot
+cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
+#Logit transform EduPositiveProportion
+#logit(p) = log[p/(1-p)]
+EdUppImpute <- cDT$EduPositiveProportion
+EdUppImpute[EdUppImpute==0] <- .01
+EdUppImpute[EdUppImpute==1] <- .99
+cDT$EduPositiveLogit <- log2(EdUppImpute/(1-EdUppImpute))
+
 #Summarize cell data to well level by taking the medians of these parameters
 wNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
 #Remove the well normalized values as the median is 1 by definition
@@ -222,9 +285,15 @@ wKeep<-cDT[,wNames,with=FALSE]
 wDT<-wKeep[,lapply(.SD,numericMedian),keyby="Barcode,Well"]
 
 #Merge back in the well and plate metadata
-mDT <- cDT[,c("Barcode","Well",setdiff(colnames(cDT),wNames)), with=FALSE]
+mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Position"))), with=FALSE], by=NULL)
 setkey(mDT,Barcode,Well)
-wDT <- mDT[wDT, mult="first"]
+wDT <- mDT[wDT]
+
+#Normalize WellCellCount to the NegCtrls
+wDT <- wDT[,WellCellCountNorm := normToNegCtrl(.SD), by="Barcode", .SDcols=c("WellCellCount","GeneSymbol")]
+
+#Normalize WellCellCount to the NegCtrls
+wDT <- wDT[,LineageRatioNorm := normToLogNegCtrl(.SD), by="Barcode", .SDcols=c("LineageRatio","GeneSymbol")]
 
 #Summarize well data to replicate level by taking the medians of these parameters
 repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
@@ -232,7 +301,8 @@ repKeep<-wDT[,repNames,with=FALSE]
 repDT<-repKeep[,lapply(.SD,numericMedian),keyby="Barcode,GeneSymbol"]
 
 #Merge back in the well and plate metadata
-mDT <- wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),repNames)), with=FALSE]
+mDT <- unique(wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),c(repNames,"Well","Position","X","Y","Row","Column"))), with=FALSE],by=NULL)
+#Combine negative controls from different pools
 setkey(mDT,Barcode,GeneSymbol)
 repDT <- mDT[repDT, mult="first"]
 
