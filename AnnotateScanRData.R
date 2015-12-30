@@ -192,9 +192,33 @@ kmeansDNACluster <- function (x, centers = 2)
   return(xkmeans$cluster)
 }
 
+#Count the number of neighboring cells
+countNeighbors <- function(dt, radius){
+  distMatrix <- as.matrix(dist(dt))
+  count <- apply(distMatrix, 2, function(x) {
+    sum(x <= radius) - 1
+  })
+  return(count)
+}
+
+labelPerimeterCells <- function(x){
+  #browser()
+  if(!length(x)==0){
+    perimeterLogicals <- vector(length=length(x))
+    perimeterLogicals[which.max(x)] <- TRUE
+  }
+  return(perimeterLogicals)
+}
 
 #########
 rawDataVersion <- "v1.0"
+calcNeighbors <- TRUE
+neighborsThresh <- 5
+wedgeAngs <- 18
+
+densityThresh <- 0.4
+outerThresh <- 0.5
+ss <- "lineageEdU"
 
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
@@ -212,9 +236,6 @@ cDT$Column <- (cDT$Well-1) %% 24 + 1
 #Convert well index to an alphanumeric label
 cDT$Well <- wellAN(16,24)[cDT$Well]
 
-densityThresh <- 0.4
-outerThresh <- 0.5
-ss <- "lineageEdU"
 
 #Count the cells at each well
 cDT<-cDT[,WellCellCount := .N, by="Barcode,Well"]
@@ -275,10 +296,47 @@ cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Ba
 EdUppImpute <- cDT$EduPositiveProportion
 EdUppImpute[EdUppImpute==0] <- .01
 EdUppImpute[EdUppImpute==1] <- .99
-cDT$EduPositiveLogit <- log2(EdUppImpute/(1-EdUppImpute))
+cDT$EduPositiveProportionLogit <- log2(EdUppImpute/(1-EdUppImpute))
 
+#Add in imageIDs
+
+#Add in adjacency parameters
+cDT <- cDT[,XLocal := (X - median(X, na.rm=TRUE)), by="Barcode,Well"]
+cDT <- cDT[,YLocal := (Y - median(Y, na.rm=TRUE)), by="Barcode,Well"]
+cDT <- cDT[,RadialPosition := sqrt(XLocal^2 + YLocal^2), by="Barcode,Well"]
+cDT <- cDT[,Theta := calcTheta(XLocal, YLocal), by="Barcode,Well"]
+
+if(calcNeighbors){
+  cDTL <- mclapply(unique(cDT$Barcode), function(barcode, dt, nrRadii=5){
+    setkey(dt,Barcode)
+    bdt <- dt[barcode]
+    neighborhoodNucleiRadii <-sqrt(median(bdt$Area/pi, na.rm=TRUE))
+    bdt <- bdt[,Neighbors := countNeighbors(.SD, radius = nrRadii*neighborhoodNucleiRadii), by = "Well", .SDcols=c("XLocal","YLocal")]
+  }, dt=cDT, mc.cores=detectCores())
+  cDT <- rbindlist(cDTL)
+} else {
+  cat("loading cDT from Disk...")
+  load("cDT.RData")
+}
+
+#Rules for classifying perimeter cells
+cDT <- cDT[,Sparse := Neighbors < neighborsThresh]
+
+#Add a local wedge ID to each cell based on conversations with Michel Nederlof
+cDT <- cDT[,Wedge:=ceiling(Theta/wedgeAngs)]
+
+#Define the perimeter cell if it exists in each wedge
+#Classify cells as outer if they have a radial position greater than a thresh
+cDT <- cDT[,OuterCell := labelOuterCells(RadialPosition, thresh=outerThresh),by="Barcode,Well"]
+
+#Classify the perimeter cells
+cDT <- cDT[,PerimeterCell:=labelPerimeterCells(RadialPosition),by="Barcode,Well,Wedge"]
+#Require a perimeter cell not be in a sparse region
+cDT$PerimeterCell[cDT$Sparse] <- FALSE
+
+#Debug: Fix summarizing derived parameters
 #Summarize cell data to well level by taking the medians of these parameters
-wNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
+wNames<-grep(pattern="(Intensity|Area|ElongationFactor|^Perimeter$|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
 #Remove the well normalized values as the median is 1 by definition
 wNames <- grep("WellNorm",x=wNames, value=TRUE, invert=TRUE)
 wKeep<-cDT[,wNames,with=FALSE]
