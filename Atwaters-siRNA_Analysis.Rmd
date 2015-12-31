@@ -24,7 +24,14 @@ library("plotly")
 source("WellPlateFunctions.R")
 
 cDT <- fread("AtwatersCell_v1.0.txt",showProgress=FALSE)
+cDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
+  cDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
+  cDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
 wDT <- fread("AtwatersWell_v1.0.txt")
+wDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+  wDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+  wDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+
 repDT <- fread("AtwatersRep_v1.0.txt")
 barcodes <- unique(repDT$Barcode)
 
@@ -179,7 +186,7 @@ setkey(repDT, WellCellCountNorm,LineageRatioNorm,EduPositiveProportionLogitNorm)
 datatable(format(repDT[,list(CellLine,GeneSymbol,WellCellCountNorm,LineageRatioNorm,EduPositiveProportionLogitNorm,G0G1Proportion,SProportion,G2Proportion)], digits=2, scientific = FALSE, nsmall=0), options = list(pageLength = 5), colnames = c("Cell Line", "Gene", "WCC", "Lineage Ratio", "EdU+","G0G1","S","G2"))
 
 setkey(wDT, WellCellCountNorm,LineageRatioNorm,EduPositiveProportionLogitNorm)
-datatable(format(wDT[,list(CellLine,GeneSymbol,WellCellCountNorm,LineageRatioNorm,EduPositiveProportionLogitNorm,G0G1Proportion,SProportion,G2Proportion)], digits=2, scientific = FALSE, nsmall=0), options = list(pageLength = 5), colnames = c("Cell Line", "Gene", "WCC", "Lineage Ratio", "EdU+","G0G1","S","G2"))
+datatable(format(wDT[,list(CellLine,GeneSymbol,WellCellCountNorm,LineageRatioNorm,EduPositiveProportionLogitNorm,G0G1Proportion,SProportion,G2Proportion,OmeroDetailURL)], digits=2, scientific = FALSE, nsmall=0), options = list(pageLength = 5), colnames = c("Cell Line", "Gene", "WCC", "Lineage Ratio", "EdU+","G0G1","S","G2","Omero"),escape = FALSE)
 ```
 
 ```{r spectral}
