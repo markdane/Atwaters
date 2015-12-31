@@ -335,16 +335,24 @@ cDT <- cDT[,PerimeterCell:=labelPerimeterCells(RadialPosition),by="Barcode,Well,
 #Require a perimeter cell not be in a sparse region
 cDT$PerimeterCell[cDT$Sparse] <- FALSE
 
-#Debug: Fix summarizing derived parameters
+#Add a cell cycle state and summarize proportions
+cDT$CellCycleState <- 2^(cDT$DNA2N)
+cDT$CellCycleState[cDT$EduPositive==1] <- 3
+cDT$CellCycleState <- cDT$CellCycleState-1
+cDT$CellCycleState <- factor(cDT$CellCycleState,levels=c(1,2,3), labels=c("G0G1","S","G2"))
+
 #Summarize cell data to well level by taking the medians of these parameters
 wNames<-grep(pattern="(Intensity|Area|ElongationFactor|^Perimeter$|Lineage|Proportion|Neighbors|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
-#Remove the well normalized values as the median is 1 by definition
-wNames <- grep("WellNorm",x=wNames, value=TRUE, invert=TRUE)
 wKeep<-cDT[,wNames,with=FALSE]
 wDT<-wKeep[,lapply(.SD,numericMedian),keyby="Barcode,Well"]
 
+#Add proportions for cell cycle state
+wDT$G0G1Proportion <- cDT[,sum(CellCycleState=="G0G1")/.N,by="Barcode,Well"][,V1]
+wDT$SProportion <- cDT[,sum(CellCycleState=="S")/.N,by="Barcode,Well"][,V1]
+wDT$G2Proportion <- cDT[,sum(CellCycleState=="G2")/.N,by="Barcode,Well"][,V1]
+
 #Merge back in the well and plate metadata
-mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Position","DNA2N","EduPositive","XLocal","YLocal","RadialPosition","Theta","Sparse","Wedge","OuterCell","PerimeterCell"))), with=FALSE], by=NULL)
+mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Position","DNA2N","EduPositive","CellCycleState","XLocal","YLocal","RadialPosition","Theta","Sparse","Wedge","OuterCell","PerimeterCell"))), with=FALSE], by=NULL)
 setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT]
 
