@@ -212,7 +212,7 @@ labelPerimeterCells <- function(x){
 
 #########
 rawDataVersion <- "v1.0"
-calcNeighbors <- TRUE
+calcNeighbors <- FALSE
 neighborsThresh <- 5
 wedgeAngs <- 18
 
@@ -223,90 +223,91 @@ ss <- "lineageEdU"
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
 
-#Combine raw data from each plate
-cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
-  bdf <- df[df$Barcode==barcode,]
-  bDT <- stitchWellData(fs=bdf)
-}, df=rdf))
-
-#Add row and column indices
-cDT$Row <- ceiling(cDT$Well/24)
-cDT$Column <- (cDT$Well-1) %% 24 + 1
-
-#Convert well index to an alphanumeric label
-cDT$Well <- wellAN(16,24)[cDT$Well]
-
-
-#Count the cells at each well
-cDT<-cDT[,WellCellCount := .N, by="Barcode,Well"]
-
-#Filter out debris based on nuclear area
-nuclearAreaThresh <- 50
-cDT <- cDT[cDT$Area >nuclearAreaThresh,]
-
-cDT$TotalIntensityDAPI <- cDT$Area*cDT$MeanIntensityDAPI
-
-#Read in siRNA location and annotations
-siRNAs <- readWorksheetFromFile("./Metadata/LH_2015Oct384 G-CUSTOM-185752.xls", sheet="Sequences_by_Ord_w384ShippingRa",startRow=3, header=TRUE)
-siRNAs <- convertColumnNames(data.table(siRNAs))
-siRNAs$Plate <- gsub("Plate ","",siRNAs$Plate)
-siRNAs <- unique(siRNAs[,list(Plate,Well,GeneSymbol,GENEID,GeneAccession,GINumber,PoolCatalogNumber)])
-siRNAs$GeneSymbol[grepl("ON-TARGET",siRNAs$GeneSymbol)] <- "NegCtrl"
-
-#Add siRNA annotations to the cell level data
-setkey(siRNAs,Plate,Well)
-setkey(cDT,Plate,Well)
-cDT <- siRNAs[cDT]
-
-#Add labels to cell seeding wells
-cDT$GeneSymbol <- annotateCellSeedWells(cDT[,list(GeneSymbol,Well)])
-
-#Create a lineageRatio signal for each cell KRT19/KRT5 luminal/basal
-cDT$LineageRatio <- log2((cDT$MeanIntensityAlexa555Cyto+1)/(cDT$MeanIntensityAlexa488Cyto+1))
-
-#Label cells DNA 2N, 4N and EdU state
-#Gate each well DAPI signal independently
-#Set 2N and 4N DNA status
-cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode,Well"]
-
-cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
-cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
-
-#Logit transform DNA Proportions
-#logit(p) = log[p/(1-p)]
-if(any(grepl("DNA2NProportion",colnames(cDT)))){
-  DNA2NImpute <- cDT$DNA2NProportion
-  DNA2NImpute[DNA2NImpute==0] <- .01
-  DNA2NImpute[DNA2NImpute==1] <- .99
-  cDT$DNA2NProportionLogit <- log2(DNA2NImpute/(1-DNA2NImpute))
-}
-
-if(any(grepl("DNA4NProportion",colnames(cDT)))){
-  DNA4NImpute <- cDT$DNA4NProportion
-  DNA4NImpute[DNA4NImpute==0] <- .01
-  DNA4NImpute[DNA4NImpute==1] <- .99
-  cDT$DNA4NProportionLogit <- log2(DNA4NImpute/(1-DNA4NImpute))
-}
-
-cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode,Well"]
-#Calculate the EdU Positive Percent at each spot
-cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
-#Logit transform EduPositiveProportion
-#logit(p) = log[p/(1-p)]
-EdUppImpute <- cDT$EduPositiveProportion
-EdUppImpute[EdUppImpute==0] <- .01
-EdUppImpute[EdUppImpute==1] <- .99
-cDT$EduPositiveProportionLogit <- log2(EdUppImpute/(1-EdUppImpute))
-
-#Add in imageIDs
-
-#Add in adjacency parameters
-cDT <- cDT[,XLocal := (X - median(X, na.rm=TRUE)), by="Barcode,Well"]
-cDT <- cDT[,YLocal := (Y - median(Y, na.rm=TRUE)), by="Barcode,Well"]
-cDT <- cDT[,RadialPosition := sqrt(XLocal^2 + YLocal^2), by="Barcode,Well"]
-cDT <- cDT[,Theta := calcTheta(XLocal, YLocal), by="Barcode,Well"]
-
 if(calcNeighbors){
+  #Combine raw data from each plate
+  cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
+    bdf <- df[df$Barcode==barcode,]
+    bDT <- stitchWellData(fs=bdf)
+  }, df=rdf))
+  
+  #Add row and column indices
+  cDT$Row <- ceiling(cDT$Well/24)
+  cDT$Column <- (cDT$Well-1) %% 24 + 1
+  
+  #Convert well index to an alphanumeric label
+  cDT$Well <- wellAN(16,24)[cDT$Well]
+  
+  
+  #Count the cells at each well
+  cDT<-cDT[,WellCellCount := .N, by="Barcode,Well"]
+  
+  #Filter out debris based on nuclear area
+  nuclearAreaThresh <- 50
+  cDT <- cDT[cDT$Area >nuclearAreaThresh,]
+  
+  cDT$TotalIntensityDAPI <- cDT$Area*cDT$MeanIntensityDAPI
+  
+  #Read in siRNA location and annotations
+  siRNAs <- readWorksheetFromFile("./Metadata/LH_2015Oct384 G-CUSTOM-185752.xls", sheet="Sequences_by_Ord_w384ShippingRa",startRow=3, header=TRUE)
+  siRNAs <- convertColumnNames(data.table(siRNAs))
+  siRNAs$Plate <- gsub("Plate ","",siRNAs$Plate)
+  siRNAs <- unique(siRNAs[,list(Plate,Well,GeneSymbol,GENEID,GeneAccession,GINumber,PoolCatalogNumber)])
+  siRNAs$GeneSymbol[grepl("ON-TARGET",siRNAs$GeneSymbol)] <- "NegCtrl"
+  
+  #Add siRNA annotations to the cell level data
+  setkey(siRNAs,Plate,Well)
+  setkey(cDT,Plate,Well)
+  cDT <- siRNAs[cDT]
+  
+  #Add labels to cell seeding wells
+  cDT$GeneSymbol <- annotateCellSeedWells(cDT[,list(GeneSymbol,Well)])
+  
+  #Create a lineageRatio signal for each cell KRT19/KRT5 luminal/basal
+  cDT$LineageRatio <- log2((cDT$MeanIntensityAlexa555Cyto+1)/(cDT$MeanIntensityAlexa488Cyto+1))
+  
+  #Label cells DNA 2N, 4N and EdU state
+  #Gate each well DAPI signal independently
+  #Set 2N and 4N DNA status
+  cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode,Well"]
+  
+  cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
+  cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
+  
+  #Logit transform DNA Proportions
+  #logit(p) = log[p/(1-p)]
+  if(any(grepl("DNA2NProportion",colnames(cDT)))){
+    DNA2NImpute <- cDT$DNA2NProportion
+    DNA2NImpute[DNA2NImpute==0] <- .01
+    DNA2NImpute[DNA2NImpute==1] <- .99
+    cDT$DNA2NProportionLogit <- log2(DNA2NImpute/(1-DNA2NImpute))
+  }
+  
+  if(any(grepl("DNA4NProportion",colnames(cDT)))){
+    DNA4NImpute <- cDT$DNA4NProportion
+    DNA4NImpute[DNA4NImpute==0] <- .01
+    DNA4NImpute[DNA4NImpute==1] <- .99
+    cDT$DNA4NProportionLogit <- log2(DNA4NImpute/(1-DNA4NImpute))
+  }
+  
+  cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode,Well"]
+  #Calculate the EdU Positive Percent at each spot
+  cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
+  #Logit transform EduPositiveProportion
+  #logit(p) = log[p/(1-p)]
+  EdUppImpute <- cDT$EduPositiveProportion
+  EdUppImpute[EdUppImpute==0] <- .01
+  EdUppImpute[EdUppImpute==1] <- .99
+  cDT$EduPositiveProportionLogit <- log2(EdUppImpute/(1-EdUppImpute))
+  
+  #Add in imageIDs
+  
+  #Add in adjacency parameters
+  cDT <- cDT[,XLocal := (X - median(X, na.rm=TRUE)), by="Barcode,Well"]
+  cDT <- cDT[,YLocal := (Y - median(Y, na.rm=TRUE)), by="Barcode,Well"]
+  cDT <- cDT[,RadialPosition := sqrt(XLocal^2 + YLocal^2), by="Barcode,Well"]
+  cDT <- cDT[,Theta := calcTheta(XLocal, YLocal), by="Barcode,Well"]
+  
+  
   cDTL <- mclapply(unique(cDT$Barcode), function(barcode, dt, nrRadii=5){
     setkey(dt,Barcode)
     bdt <- dt[barcode]
@@ -336,30 +337,33 @@ cDT$PerimeterCell[cDT$Sparse] <- FALSE
 
 #Debug: Fix summarizing derived parameters
 #Summarize cell data to well level by taking the medians of these parameters
-wNames<-grep(pattern="(Intensity|Area|ElongationFactor|^Perimeter$|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
+wNames<-grep(pattern="(Intensity|Area|ElongationFactor|^Perimeter$|Lineage|Proportion|Neighbors|Density|WellCellCount|Barcode|^Well$)",x=names(cDT),value=TRUE)
 #Remove the well normalized values as the median is 1 by definition
 wNames <- grep("WellNorm",x=wNames, value=TRUE, invert=TRUE)
 wKeep<-cDT[,wNames,with=FALSE]
 wDT<-wKeep[,lapply(.SD,numericMedian),keyby="Barcode,Well"]
 
 #Merge back in the well and plate metadata
-mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Position"))), with=FALSE], by=NULL)
+mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Position","DNA2N","EduPositive","XLocal","YLocal","RadialPosition","Theta","Sparse","Wedge","OuterCell","PerimeterCell"))), with=FALSE], by=NULL)
 setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT]
 
 #Normalize WellCellCount to the NegCtrls
 wDT <- wDT[,WellCellCountNorm := normToNegCtrl(.SD), by="Barcode", .SDcols=c("WellCellCount","GeneSymbol")]
 
-#Normalize WellCellCount to the NegCtrls
+#Normalize LineageRatio to the NegCtrls
 wDT <- wDT[,LineageRatioNorm := normToLogNegCtrl(.SD), by="Barcode", .SDcols=c("LineageRatio","GeneSymbol")]
 
+#Normalize EduPositiveProportionLogit to the NegCtrls
+wDT <- wDT[,EduPositiveProportionLogitNorm := normToLogNegCtrl(.SD), by="Barcode", .SDcols=c("EduPositiveProportionLogit","GeneSymbol")]
+
 #Summarize well data to replicate level by taking the medians of these parameters
-repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|EdUPositiveProportion|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
+repNames<-grep(pattern="(Intensity|Area|ElongationFactor|Perimeter|Lineage|Proportion|Neighbors|Density|WellCellCount|Barcode|GeneSymbol)",x=names(wDT),value=TRUE)
 repKeep<-wDT[,repNames,with=FALSE]
 repDT<-repKeep[,lapply(.SD,numericMedian),keyby="Barcode,GeneSymbol"]
 
 #Merge back in the well and plate metadata
-mDT <- unique(wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),c(repNames,"Well","Position","X","Y","Row","Column"))), with=FALSE],by=NULL)
+mDT <- unique(wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),c(repNames,"Well","Row","Column"))), with=FALSE],by=NULL)
 #Combine negative controls from different pools
 setkey(mDT,Barcode,GeneSymbol)
 repDT <- mDT[repDT, mult="first"]

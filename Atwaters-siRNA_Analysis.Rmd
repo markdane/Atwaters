@@ -23,8 +23,6 @@ library("plotly")
 
 source("WellPlateFunctions.R")
 
-WCCThresh <- 500
-
 cDT <- fread("AtwatersCell_v1.0.txt",showProgress=FALSE)
 wDT <- fread("AtwatersWell_v1.0.txt")
 repDT <- fread("AtwatersRep_v1.0.txt")
@@ -47,11 +45,12 @@ print(p)
 ```{r UnivariateSignals , fig.width=5,fig.height=3, eval=TRUE}
 
 DT <- cDT[grepl("NegCtrl",cDT$GeneSymbol)]
-p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=as.factor(DNA2N),colour=as.factor(DNA2N)))+
+p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),colour=factor(DNA2N,labels=c("2N","4N"))))+
   geom_histogram(binwidth=1000, position="dodge")+
   coord_cartesian(xlim=quantile(DT$TotalIntensityDAPI,c(.02,.99)))+
   ggtitle("Total DAPI Distribution in Negative Control Wells")+
   facet_grid(CellLine~Plate, scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
+  guides(fill=guide_legend("DNA 2N or 4N"),colour=FALSE)+
   theme(strip.text = element_text(size = rel(.8)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
