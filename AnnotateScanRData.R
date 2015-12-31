@@ -222,21 +222,22 @@ ss <- "lineageEdU"
 
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
+imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata/"),full.names = TRUE), value=TRUE)
 
 if(calcNeighbors){
   #Combine raw data from each plate
   cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
     bdf <- df[df$Barcode==barcode,]
     bDT <- stitchWellData(fs=bdf)
+    #Read in and merge the Omero URLs
+    omeroIndex <- fread(grep(barcode, imageURLFiles, value=TRUE))[,list(PlateID,Row,Column,Field,ImageID)]
+    omeroIndex$Well <- omeroIndex$Column + (omeroIndex$Row-1)*24
+    bDT$Field <- bDT$Position-1
+    bDT <- merge(bDT,omeroIndex,by=c("Well","Field"))
   }, df=rdf))
-  
-  #Add row and column indices
-  cDT$Row <- ceiling(cDT$Well/24)
-  cDT$Column <- (cDT$Well-1) %% 24 + 1
   
   #Convert well index to an alphanumeric label
   cDT$Well <- wellAN(16,24)[cDT$Well]
-  
   
   #Count the cells at each well
   cDT<-cDT[,WellCellCount := .N, by="Barcode,Well"]
@@ -268,9 +269,9 @@ if(calcNeighbors){
   #Label cells DNA 2N, 4N and EdU state
   #Gate each well DAPI signal independently
   #Set 2N and 4N DNA status
-  cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode,Well"]
+  cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode"]
   
-  cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
+  cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode"]
   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
   
   #Logit transform DNA Proportions
@@ -289,7 +290,7 @@ if(calcNeighbors){
     cDT$DNA4NProportionLogit <- log2(DNA4NImpute/(1-DNA4NImpute))
   }
   
-  cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode,Well"]
+  cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode"]
   #Calculate the EdU Positive Percent at each spot
   cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
   #Logit transform EduPositiveProportion
@@ -299,8 +300,7 @@ if(calcNeighbors){
   EdUppImpute[EdUppImpute==1] <- .99
   cDT$EduPositiveProportionLogit <- log2(EdUppImpute/(1-EdUppImpute))
   
-  #Add in imageIDs
-  
+
   #Add in adjacency parameters
   cDT <- cDT[,XLocal := (X - median(X, na.rm=TRUE)), by="Barcode,Well"]
   cDT <- cDT[,YLocal := (Y - median(Y, na.rm=TRUE)), by="Barcode,Well"]
@@ -371,7 +371,7 @@ repKeep<-wDT[,repNames,with=FALSE]
 repDT<-repKeep[,lapply(.SD,numericMedian),keyby="Barcode,GeneSymbol"]
 
 #Merge back in the well and plate metadata
-mDT <- unique(wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),c(repNames,"Well","Row","Column"))), with=FALSE],by=NULL)
+mDT <- unique(wDT[,c("Barcode","GeneSymbol",setdiff(colnames(wDT),c(repNames,"Well","Row","Column","ImageID"))), with=FALSE],by=NULL)
 #Combine negative controls from different pools
 setkey(mDT,Barcode,GeneSymbol)
 repDT <- mDT[repDT, mult="first"]
