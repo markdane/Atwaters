@@ -212,9 +212,9 @@ labelPerimeterCells <- function(x){
 
 #########
 rawDataVersion <- "v1.0"
-calcNeighbors <- FALSE
+calcNeighbors <- TRUE
 neighborsThresh <- 5
-wedgeAngs <- 18
+wedgeAngs <- 36
 
 densityThresh <- 0.4
 outerThresh <- 0.5
