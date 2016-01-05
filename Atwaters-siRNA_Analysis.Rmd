@@ -49,7 +49,7 @@ print(p)
 
 ```
 
-```{r UnivariateSignals , fig.width=5,fig.height=3, eval=TRUE}
+```{r UnivariateSignals , fig.width=5,fig.height=6, eval=TRUE}
 
 DT <- cDT[grepl("NegCtrl",cDT$GeneSymbol)]
 p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),colour=factor(DNA2N,labels=c("2N","4N"))))+
@@ -214,16 +214,30 @@ print(p)
 
 ```
 
-```{r,  fig.width=8, fig.height=3}
+```{r controlsAnalysis,  fig.width=8, fig.height=6}
 
 setkey(cDT,GeneSymbol)
 DT <- cDT[c("PLK1","NegCtrl")]
 
+#Compute Z' Factors
+wccZp <- imageHTS::zprime(DT[GeneSymbol=="NegCtrl",WellCellCount],DT[GeneSymbol=="PLK1",WellCellCount])
+
+calcZPrime <- function(dt, value){
+  imageHTS::zprime(DT[GeneSymbol=="NegCtrl",WellCellCount],DT[GeneSymbol=="PLK1",WellCellCount])
+}
+cat("Well Cell Count Z Prime Factor Values")
+for(barcode in unique(DT$Barcode)){
+  setkey(DT,Barcode)
+  bDT <-DT[barcode]
+ cat(unique(bDT$Barcode),unique(bDT$CellLine),"WellCellCount", imageHTS::zprime(bDT[GeneSymbol=="NegCtrl",WellCellCount],bDT[GeneSymbol=="PLK1",WellCellCount], method='original'),"\n")
+}
+
 p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
-  geom_density(alpha=.2)+    
-  ggtitle(paste("Controls Density Analysis of Nuclei Count for Atwaters Plates"))+
+  geom_density(alpha=.5)+   
+  #coord_cartesian(xlim())
+  ggtitle(paste("Cell Count Controls Density Analysis for Atwaters Plates"))+
   xlab("")+ylab("Nuclei Count Density")+
-  facet_grid(CellLine~Plate)+
+  facet_grid(CellLine~Plate,scales = "free")+
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)
 

@@ -210,8 +210,29 @@ labelPerimeterCells <- function(x){
   return(perimeterLogicals)
 }
 
+localMinima <- function(x, probs=c(.2,.8)){
+  #browser()
+  #Finds the local minima between the probs quantiles
+  #x numeric vector
+  #probs interval limits on where to search for the minima
+  h <- hist(x,breaks=300, plot=FALSE)
+  if(length(h$mids)<2) return(max(x))
+  f <- approxfun(h$mids, h$counts)
+  o <- optimise(f, interval=quantile(x, probs))
+  if(length(o)>2) stop()
+  return(o$minimum)
+}
+
+gateOnlocalMinima <- function(x, ...){
+  thresh <- localMinima(x, ...)
+  cluster <- rep.int(1,times=length(x))
+  cluster[x>thresh] <- 2
+  return(cluster)
+}
+
 #########
 rawDataVersion <- "v1.0"
+loadcDT <- FALSE
 calcNeighbors <- TRUE
 neighborsThresh <- 5
 wedgeAngs <- 36
@@ -224,7 +245,7 @@ ss <- "lineageEdU"
 rdf <- getWellSubsetFileNames("RawData")
 imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata/"),full.names = TRUE), value=TRUE)
 
-if(calcNeighbors){
+if(!loadcDT){
   #Combine raw data from each plate
   cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
     bdf <- df[df$Barcode==barcode,]
@@ -269,9 +290,11 @@ if(calcNeighbors){
   #Label cells DNA 2N, 4N and EdU state
   #Gate each well DAPI signal independently
   #Set 2N and 4N DNA status
-  cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode"]
-  
-  cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode"]
+  #   cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode"]
+  #   cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode"]
+  #   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
+  cDT <- cDT[,DNA2N := gateOnlocalMinima(TotalIntensityDAPI), by="Barcode,Well"]
+  cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
   
   #Logit transform DNA Proportions
@@ -290,7 +313,8 @@ if(calcNeighbors){
     cDT$DNA4NProportionLogit <- log2(DNA4NImpute/(1-DNA4NImpute))
   }
   
-  cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode"]
+  #cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode"]
+  cDT <- cDT[,EduPositive := gateOnlocalMinima(MeanIntensityAlexa647, probs=c(.05,.95))-1, by="Barcode,Well"]
   #Calculate the EdU Positive Percent at each spot
   cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
   #Logit transform EduPositiveProportion
@@ -300,28 +324,31 @@ if(calcNeighbors){
   EdUppImpute[EdUppImpute==1] <- .99
   cDT$EduPositiveProportionLogit <- log2(EdUppImpute/(1-EdUppImpute))
   
-
+  
   #Add in adjacency parameters
   cDT <- cDT[,XLocal := (X - median(X, na.rm=TRUE)), by="Barcode,Well"]
   cDT <- cDT[,YLocal := (Y - median(Y, na.rm=TRUE)), by="Barcode,Well"]
   cDT <- cDT[,RadialPosition := sqrt(XLocal^2 + YLocal^2), by="Barcode,Well"]
   cDT <- cDT[,Theta := calcTheta(XLocal, YLocal), by="Barcode,Well"]
   
+  if(calcNeighbors){
+    cDTL <- lapply(unique(cDT$Barcode), function(barcode, dt, nrRadii=5){
+      setkey(dt,Barcode)
+      bdt <- dt[barcode]
+      neighborhoodNucleiRadii <-sqrt(median(bdt$Area/pi, na.rm=TRUE))
+      bdt <- bdt[,Neighbors := countNeighbors(.SD, radius = nrRadii*neighborhoodNucleiRadii), by = "Well", .SDcols=c("XLocal","YLocal")]
+    }, dt=cDT)
+    cDT <- rbindlist(cDTL)
+  }
   
-  cDTL <- mclapply(unique(cDT$Barcode), function(barcode, dt, nrRadii=5){
-    setkey(dt,Barcode)
-    bdt <- dt[barcode]
-    neighborhoodNucleiRadii <-sqrt(median(bdt$Area/pi, na.rm=TRUE))
-    bdt <- bdt[,Neighbors := countNeighbors(.SD, radius = nrRadii*neighborhoodNucleiRadii), by = "Well", .SDcols=c("XLocal","YLocal")]
-  }, dt=cDT, mc.cores=detectCores())
-  cDT <- rbindlist(cDTL)
 } else {
   cat("loading cDT from Disk...")
   load("cDT.RData")
 }
 
+
 #Rules for classifying perimeter cells
-cDT <- cDT[,Sparse := Neighbors < neighborsThresh]
+if("Neighbors" %in% colnames(cDT)) cDT <- cDT[,Sparse := Neighbors < neighborsThresh]
 
 #Add a local wedge ID to each cell based on conversations with Michel Nederlof
 cDT <- cDT[,Wedge:=ceiling(Theta/wedgeAngs)]
@@ -333,7 +360,7 @@ cDT <- cDT[,OuterCell := labelOuterCells(RadialPosition, thresh=outerThresh),by=
 #Classify the perimeter cells
 cDT <- cDT[,PerimeterCell:=labelPerimeterCells(RadialPosition),by="Barcode,Well,Wedge"]
 #Require a perimeter cell not be in a sparse region
-cDT$PerimeterCell[cDT$Sparse] <- FALSE
+if("Sparse" %in% colnames(cDT)) cDT$PerimeterCell[cDT$Sparse] <- FALSE
 
 #Add a cell cycle state and summarize proportions
 cDT$CellCycleState <- 2^(cDT$DNA2N)
