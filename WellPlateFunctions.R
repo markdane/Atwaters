@@ -23,3 +23,8 @@ normWithinPlate <- function (DT, value, base)
   normedValues <- DT[, value, with = FALSE]/valueMedian
   return(normedValues)
 }
+
+#Compute Z' Factors
+calcZPrime <- function(dt, method="original", posCtrl="PLK1"){
+  imageHTS::zprime(dt[GeneSymbol=="NegCtrl",WellCellCount],dt[GeneSymbol==posCtrl,WellCellCount], method)
+}

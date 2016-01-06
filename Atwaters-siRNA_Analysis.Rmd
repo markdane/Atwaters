@@ -38,18 +38,117 @@ barcodes <- unique(repDT$Barcode)
 ```
 
 
-```{r WCC_byCellLine, fig.width=8,fig.height=5, eval=TRUE}
-dt <- wDT[wDT$GeneSymbol %in% c("NegCtrl","CSCtrlA","CSCtrlB","CSCtrlC","CSCtrlD"),]
-p <- ggplot(dt, aes(x=GeneSymbol, y=WellCellCount, colour=Barcode))+geom_boxplot()+
-  ggtitle("Cell Count in Cell Seeding and NegCtrl Wells")+
-  facet_wrap(~CellLine, scales = "free_y")+
-  guides(colour=guide_legend(ncol=2))+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)))
+```{r PLK1controlsAnalysis,  fig.width=8, fig.height=6}
+
+setkey(cDT,GeneSymbol)
+DT <- cDT[c("PLK1","NegCtrl")]
+DT <- DT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine", "ZPrimeRobust")
+DT <- unique(DT[,colNames, with=FALSE])
+
+p <- ggplot(DT, aes(x=factor(Barcode), y=ZPrimeRobust, colour=CellLine))+
+  geom_point(size = 5)+
+    coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  ggtitle("Robust Z Prime Factors (cell level data)")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
+wnfDT <- unique(wDT[,colNames, with=FALSE])
+wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine", "ZPrimeRobust")
+wnfDT <- unique(wnfDT[,colNames, with=FALSE])
+
+
+p <- ggplot(wnfDT, aes(x=factor(Barcode), y=ZPrimeRobust, colour=CellLine))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  ggtitle("Robust Z Prime Factors (well summarized)")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+#print(p)
+
+setkey(wDT,GeneSymbol)
+DT <- wDT[c("PLK1","NegCtrl")]
+colNames <- c("Barcode", "CellLine", "WellCellCount","Plate", "GeneSymbol")
+DT <- DT[,colNames,with=FALSE]
+
+p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
+  geom_density(alpha=.5)+   
+  ggtitle(paste("Cell Count Controls Density Analysis for Atwaters Plates"))+
+  xlab("")+ylab("Cell Count Density")+
+  facet_grid(CellLine~Plate,scales = "free")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.2)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)
 
 ```
 
-```{r UnivariateSignals , fig.width=5,fig.height=6, eval=TRUE}
+
+
+```{r AURKAcontrolsAnalysis,  fig.width=8, fig.height=6, eval=FALSE}
+
+setkey(cDT,GeneSymbol)
+DT <- cDT[c("AURKA","NegCtrl")]
+DT <- DT[,ZPrimeRobust := calcZPrime(.SD, method="robust",posCtrl="AURKA"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine", "ZPrimeRobust")
+DT <- unique(DT[,colNames, with=FALSE])
+
+p <- ggplot(DT, aes(x=factor(Barcode), y=ZPrimeRobust, colour=CellLine))+
+  geom_point(size = 5)+
+    #coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  ggtitle("Robust Z Prime Factors (cell level data)")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+wnfDT <- wDT[c("AURKA","NegCtrl")]
+colNames <- grep("Omero|Image|Field",colnames(wnfDT),value=TRUE,invert=TRUE)
+wnfDT <- unique(wnfDT[,colNames, with=FALSE])
+wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original", posCtrl="AURKA"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust",posCtrl="AURKA"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd",posCtrl="AURKA"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine", "ZPrimeRobust")
+wnfDT <- unique(wnfDT[,colNames, with=FALSE])
+
+
+p <- ggplot(wnfDT, aes(x=factor(Barcode), y=ZPrimeRobust, colour=CellLine))+
+  geom_point(size = 5)+
+  #coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  ggtitle("Robust Z Prime Factors (well summarized)")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+#print(p)
+
+setkey(wDT,GeneSymbol)
+DT <- wDT[c("AURKA","NegCtrl")]
+colNames <- c("Barcode", "CellLine", "WellCellCount","Plate", "GeneSymbol")
+DT <- DT[,colNames,with=FALSE]
+
+p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
+  geom_density(alpha=.5)+   
+  ggtitle(paste("Cell Count Controls Density Analysis for Atwaters Plates"))+
+  xlab("")+ylab("Cell Count Density")+
+  facet_grid(CellLine~Plate,scales = "free")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.2)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+```
+
+```{r WCC_byCellLine, fig.width=8,fig.height=7, eval=TRUE}
+dt <- wDT[wDT$GeneSymbol %in% c("NegCtrl","CSCtrlA","CSCtrlB","CSCtrlC","CSCtrlD"),]
+p <- ggplot(dt, aes(x=GeneSymbol, y=WellCellCount, colour=Barcode))+geom_boxplot()+
+  ggtitle("Cell Count in Cell Seeding and NegCtrl Wells")+
+  facet_wrap(~CellLine, ncol = 2, scales = "free_y")+
+  guides(colour=guide_legend(ncol=2))+
+  theme(strip.text = element_text(size = rel(1)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.5)),legend.title=element_text(size = rel(1)))
+print(p)
+
+```
+
+```{r UnivariateSignals , fig.width=7,fig.height=8, eval=TRUE}
 
 DT <- cDT[grepl("NegCtrl",cDT$GeneSymbol)]
 p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),colour=factor(DNA2N,labels=c("2N","4N"))))+
@@ -58,7 +157,7 @@ p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),
   ggtitle("Total DAPI Distribution in Negative Control Wells")+
   facet_grid(CellLine~Plate, scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
   guides(fill=guide_legend("DNA 2N or 4N"),colour=FALSE)+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(.3)))
 print(p)
 
 p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa488Cyto+1)))+
@@ -105,7 +204,7 @@ for (barcode in barcodes){
     ggtitle(paste("Median Replicate Nuclei Count Normalized to NegCtrl in",barcode))+
     xlab("")+ylab("")+
     facet_grid(CellLine~Barcode, scales="free")+
-    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+    theme(strip.text = element_text(size = rel(1)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   print(p)
 }
 
@@ -159,10 +258,12 @@ for (barcode in barcodes){
 
 p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=TotalIntensityDAPI, y=log2(MeanIntensityAlexa647+1), colour=CellCycleState))+
   geom_point(size=.1, alpha=.4)+
+  coord_cartesian(xlim=c(0,3e+06))+
   guides(colour=FALSE)+
   ggtitle("Cell Cycle States of NegCtrl")+
   geom_rug(col=rgb(.5,0,0,alpha=.01))+
-  facet_grid(CellLine~Plate,scales = "free_y", labeller = labeller(Plate = label_both, CellLine = label_value))
+  facet_grid(CellLine~Plate,scales = "free_y", labeller = labeller(Plate = label_both, CellLine = label_value))+
+      theme(strip.text = element_text(size = rel(.8)))
 print(p)
 
 wCcsDTm <- melt(wDT, id.vars=c("Barcode","Plate","CellLine","Well","GeneSymbol"),measure.vars = c("G0G1Proportion","SProportion","G2Proportion"), variable.name = "State",value.name = "Proportion")
@@ -173,7 +274,7 @@ p <- ggplot(ccsDT, aes(x=factor(GeneSymbol), y=Proportion, fill=State))+
   geom_bar(stat="identity")+
   facet_grid(CellLine~Plate,scales = "free_x", labeller = labeller(Plate = label_both, CellLine = label_value))+
   ggtitle("Cell Cycle States")+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)), axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.8)))
+  theme(strip.text = element_text(size = rel(.7)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.4)), axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.8)))
 suppressWarnings(print(p))
 
 #ggplotly(p)
@@ -214,35 +315,6 @@ print(p)
 
 ```
 
-```{r controlsAnalysis,  fig.width=8, fig.height=6}
-
-setkey(cDT,GeneSymbol)
-DT <- cDT[c("PLK1","NegCtrl")]
-
-#Compute Z' Factors
-wccZp <- imageHTS::zprime(DT[GeneSymbol=="NegCtrl",WellCellCount],DT[GeneSymbol=="PLK1",WellCellCount])
-
-calcZPrime <- function(dt, value){
-  imageHTS::zprime(DT[GeneSymbol=="NegCtrl",WellCellCount],DT[GeneSymbol=="PLK1",WellCellCount])
-}
-cat("Well Cell Count Z Prime Factor Values")
-for(barcode in unique(DT$Barcode)){
-  setkey(DT,Barcode)
-  bDT <-DT[barcode]
- cat(unique(bDT$Barcode),unique(bDT$CellLine),"WellCellCount", imageHTS::zprime(bDT[GeneSymbol=="NegCtrl",WellCellCount],bDT[GeneSymbol=="PLK1",WellCellCount], method='original'),"\n")
-}
-
-p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
-  geom_density(alpha=.5)+   
-  #coord_cartesian(xlim())
-  ggtitle(paste("Cell Count Controls Density Analysis for Atwaters Plates"))+
-  xlab("")+ylab("Nuclei Count Density")+
-  facet_grid(CellLine~Plate,scales = "free")+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
-print(p)
-
-```
-
 
 ```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
 
@@ -266,7 +338,7 @@ for (barcode in unique(wDT$Barcode)){
 ```
 
 
-```{r Layout, echo=FALSE, fig.width=6,fig.height=2, eval=TRUE}
+```{r Layout, echo=FALSE, fig.width=8,fig.height=3, eval=TRUE}
 
 p <- ggplot(wDT, aes(x=Column, y=Row, colour=GeneSymbol))+
   geom_point(size=2)+
