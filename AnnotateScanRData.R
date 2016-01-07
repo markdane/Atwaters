@@ -374,6 +374,8 @@ wKeep<-cDT[,wNames,with=FALSE]
 wDT<-wKeep[,lapply(.SD,numericMedian),keyby="Barcode,Well"]
 
 #Add proportions for cell cycle state
+setkey(cDT,Barcode,Well)
+setkey(wDT,Barcode,Well)
 wDT$G0G1Proportion <- cDT[,sum(CellCycleState=="G0G1")/.N,by="Barcode,Well"][,V1]
 wDT$SProportion <- cDT[,sum(CellCycleState=="S")/.N,by="Barcode,Well"][,V1]
 wDT$G2Proportion <- cDT[,sum(CellCycleState=="G2")/.N,by="Barcode,Well"][,V1]
