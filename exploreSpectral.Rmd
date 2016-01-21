@@ -1,0 +1,72 @@
+---
+title: "exploreSpectral"
+author: "Mark Dane"
+date: "January 19, 2016"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r setup}
+library("ggplot2")
+library("data.table")
+library("MEMA")
+library("grid")
+library("knitr")
+library("gplots")
+library("RColorBrewer")
+library("DT")
+library("d3heatmap")
+library("plotly")
+library(scales)
+
+source("WellPlateFunctions.R")
+
+cDT <- fread("AtwatersCell_v1.0.txt",showProgress=FALSE)
+cDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
+cDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
+cDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
+wDT <- fread("AtwatersWell_v1.0.txt")
+wDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+wDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+wDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+
+repDT <- fread("AtwatersRep_v1.0.txt",showProgress=FALSE)
+barcodes <- unique(repDT$Barcode)
+
+```
+
+
+
+```{r spectral}
+
+DT <- cDT[cDT$GeneSymbol=="NegCtrl"]
+DT <- DT[DT$CellLine=="CAL51"]
+
+p <- ggplot(DT, aes(x=log2(MeanIntensityDAPI+1), y=log2(MeanIntensityAlexa488Cyto+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  ggtitle("KRT5 vs. Mean DAPI in NegCtrl")+
+  facet_wrap(~Well,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa488Cyto+1), y=log2(MeanIntensityAlexa555Cyto+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  ggtitle("KRT19 vs. KRT5 in NegCtrl")+
+  coord_cartesian(xlim=c(4,11),ylim=c(4,11))+
+  facet_wrap(~Well,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa555Cyto+1), y=log2(MeanIntensityAlexa647+1)))+
+  geom_point(size=.1)+
+  geom_rug(col=rgb(.5,0,0,alpha=.01))+
+  ggtitle("EdU vs. KRT19 in NegCtrl")+
+  facet_wrap(~Well,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))
+print(p)
+
+```
+

@@ -148,17 +148,23 @@ annotateCellSeedWells <- function(dt){
   #B(1/2 #A) CSCtrlB
   #C(1/4 #A) CSCtrlC
   #D(1/8 #A) CSCtrlD
-  #the rest of wells with same as A. 
-  CSCtrlAWells <- unique(dt$Well[is.na(dt$GeneSymbol)])
-  CSCtrlBWells <- c("B01","B24","F01","F24","J01","J24","N01","N24")
-  CSCtrlCWells <- c("C01","C24","G01","G24","K01","K24","O01","O24")
-  CSCtrlDWells <- c("D01","D24","H01","H24","L01","L24","P01","P24")
-  
-  dt$GeneSymbol[dt$Well %in% CSCtrlAWells] <- "CSCtrlA"
-  dt$GeneSymbol[dt$Well %in% CSCtrlBWells] <- "CSCtrlB"
-  dt$GeneSymbol[dt$Well %in% CSCtrlCWells] <- "CSCtrlC"
-  dt$GeneSymbol[dt$Well %in% CSCtrlDWells] <- "CSCtrlD"
-  return(dt$GeneSymbol)
+  #the rest of wells with same as A.
+  #Identify NA wells on a plate basis
+  dt <- rbindlist(lapply(unique(dt$Plate), function(plate){
+    setkey(dt,Plate)
+    pdt <- dt[plate]
+    CSCtrlAWells <- unique(pdt$Well[is.na(pdt$GeneSymbol)])
+    CSCtrlBWells <- c("B01","B24","F01","F24","J01","J24","N01","N24")
+    CSCtrlCWells <- c("C01","C24","G01","G24","K01","K24","O01","O24")
+    CSCtrlDWells <- c("D01","D24","H01","H24","L01","L24","P01","P24")
+    
+    pdt$GeneSymbol[pdt$Well %in% CSCtrlAWells] <- "CSCtrlA"
+    pdt$GeneSymbol[pdt$Well %in% CSCtrlBWells] <- "CSCtrlB"
+    pdt$GeneSymbol[pdt$Well %in% CSCtrlCWells] <- "CSCtrlC"
+    pdt$GeneSymbol[pdt$Well %in% CSCtrlDWells] <- "CSCtrlD"
+    return(pdt)
+  }))
+  return(dt)
 }
 
 # normToNegCtrl <- function(dt){
@@ -233,7 +239,7 @@ gateOnlocalMinima <- function(x, ...){
 #########
 rawDataVersion <- "v1.0"
 loadcDT <- FALSE
-calcNeighbors <- TRUE
+calcNeighbors <- FALSE
 neighborsThresh <- 5
 wedgeAngs <- 36
 
@@ -243,11 +249,11 @@ ss <- "lineageEdU"
 
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
-imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata/"),full.names = TRUE), value=TRUE)
+imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata"),full.names = TRUE), value=TRUE)
 
 if(!loadcDT){
   #Combine raw data from each plate
-  cDT <- rbindlist(lapply(unique(rdf$Barcode), function(barcode, df){
+  cDT <- rbindlist(mclapply(unique(rdf$Barcode), function(barcode, df){
     bdf <- df[df$Barcode==barcode,]
     bDT <- stitchWellData(fs=bdf)
     #Read in and merge the Omero URLs
@@ -255,7 +261,8 @@ if(!loadcDT){
     omeroIndex$Well <- omeroIndex$Column + (omeroIndex$Row-1)*24
     bDT$Field <- bDT$Position-1
     bDT <- merge(bDT,omeroIndex,by=c("Well","Field"))
-  }, df=rdf))
+  }, df=rdf, mc.cores=detectCores()))
+  
   
   #Convert well index to an alphanumeric label
   cDT$Well <- wellAN(16,24)[cDT$Well]
@@ -271,6 +278,7 @@ if(!loadcDT){
   
   #Read in siRNA location and annotations
   siRNAs <- readWorksheetFromFile("./Metadata/LH_2015Oct384 G-CUSTOM-185752.xls", sheet="Sequences_by_Ord_w384ShippingRa",startRow=3, header=TRUE)
+  siRNAs <- siRNAs[-which(is.na(siRNAs)[,1]),]
   siRNAs <- convertColumnNames(data.table(siRNAs))
   siRNAs$Plate <- gsub("Plate ","",siRNAs$Plate)
   siRNAs <- unique(siRNAs[,list(Plate,Well,GeneSymbol,GENEID,GeneAccession,GINumber,PoolCatalogNumber)])
@@ -282,7 +290,11 @@ if(!loadcDT){
   cDT <- siRNAs[cDT]
   
   #Add labels to cell seeding wells
-  cDT$GeneSymbol <- annotateCellSeedWells(cDT[,list(GeneSymbol,Well)])
+  GSdt <- unique(annotateCellSeedWells(cDT[,list(GeneSymbol,Well,Plate)]))
+  setkey(GSdt,Plate,Well)
+  setkey(cDT,Plate,Well)
+  cDT <- cDT[,GeneSymbol:=NULL]
+  cDT <- merge(cDT,GSdt)
   
   #Create a lineageRatio signal for each cell KRT19/KRT5 luminal/basal
   cDT$LineageRatio <- log2((cDT$MeanIntensityAlexa555Cyto+1)/(cDT$MeanIntensityAlexa488Cyto+1))
@@ -293,7 +305,7 @@ if(!loadcDT){
   #   cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode"]
   #   cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode"]
   #   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
-  cDT <- cDT[,DNA2N := gateOnlocalMinima(TotalIntensityDAPI), by="Barcode,Well"]
+  cDT <- cDT[,DNA2N := gateOnlocalMinima(TotalIntensityDAPI), by="Barcode"]
   cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
   
@@ -314,7 +326,7 @@ if(!loadcDT){
   }
   
   #cDT <- cDT[,EduPositive := kmeansDNACluster(MeanIntensityAlexa647)-1L, by="Barcode"]
-  cDT <- cDT[,EduPositive := gateOnlocalMinima(MeanIntensityAlexa647, probs=c(.05,.95))-1, by="Barcode,Well"]
+  cDT <- cDT[,EduPositive := gateOnlocalMinima(MeanIntensityAlexa647, probs=c(.05,.95))-1, by="Barcode"]
   #Calculate the EdU Positive Percent at each spot
   cDT <- cDT[,EduPositiveProportion := sum(EduPositive)/length(EduPositive),by="Barcode,Well"]
   #Logit transform EduPositiveProportion
