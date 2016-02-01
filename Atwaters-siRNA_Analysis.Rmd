@@ -300,7 +300,7 @@ print(p)
 ```
 
 
-```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
+```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=FALSE}
 
 for (barcode in unique(wDT$Barcode)){
   setkey(wDT,Barcode)
@@ -322,7 +322,7 @@ for (barcode in unique(wDT$Barcode)){
 ```
 
 
-```{r Layout, echo=FALSE, fig.width=8,fig.height=3, eval=TRUE}
+```{r Layout, echo=FALSE, fig.width=8,fig.height=3, eval=FALSE}
 
 p <- ggplot(wDT, aes(x=Column, y=Row, colour=GeneSymbol))+
   geom_point(size=2)+

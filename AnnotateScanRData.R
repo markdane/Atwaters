@@ -240,6 +240,7 @@ gateOnlocalMinima <- function(x, ...){
 rawDataVersion <- "v1.0"
 loadcDT <- FALSE
 calcNeighbors <- FALSE
+mergeOmeroIDs <- FALSE
 neighborsThresh <- 5
 wedgeAngs <- 36
 
@@ -253,17 +254,20 @@ imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata"),full.names = TRUE), va
 
 if(!loadcDT){
   #Combine raw data from each plate
-  cDT <- rbindlist(mclapply(unique(rdf$Barcode), function(barcode, df){
+ cL <- mclapply(unique(rdf$Barcode), function(barcode, df){
     bdf <- df[df$Barcode==barcode,]
     bDT <- stitchWellData(fs=bdf)
-    #Read in and merge the Omero URLs
-    omeroIndex <- fread(grep(barcode, imageURLFiles, value=TRUE))[,list(PlateID,Row,Column,Field,ImageID)]
-    omeroIndex$Well <- omeroIndex$Column + (omeroIndex$Row-1)*24
-    bDT$Field <- bDT$Position-1
-    bDT <- merge(bDT,omeroIndex,by=c("Well","Field"))
-  }, df=rdf, mc.cores=detectCores()))
+    if(mergeOmeroIDs){
+      #Read in and merge the Omero URLs
+      omeroIndex <- fread(grep(barcode, imageURLFiles, value=TRUE))[,list(PlateID,Row,Column,Field,ImageID)]
+      omeroIndex$Well <- omeroIndex$Column + (omeroIndex$Row-1)*24
+      bDT$Field <- bDT$Position-1
+      bDT <- merge(bDT,omeroIndex,by=c("Well","Field"))
+    }
+    return(bDT)
+  }, df=rdf, mc.cores = detectCores())
   
-  
+cDT <- rbindlist(cL)
   #Convert well index to an alphanumeric label
   cDT$Well <- wellAN(16,24)[cDT$Well]
   
