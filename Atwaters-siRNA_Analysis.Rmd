@@ -24,16 +24,16 @@ library(scales)
 
 source("WellPlateFunctions.R")
 
-cDT <- fread("AtwatersCell_v1.0.txt",showProgress=FALSE)
+cDT <- fread("AtwatersCell_v1.1.txt",showProgress=FALSE)
 cDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
 cDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
 cDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
-wDT <- fread("AtwatersWell_v1.0.txt")
+wDT <- fread("AtwatersWell_v1.1.txt")
 wDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
 wDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
 wDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
 
-repDT <- fread("AtwatersRep_v1.0.txt",showProgress=FALSE)
+repDT <- fread("AtwatersRep_v1.1.txt",showProgress=FALSE)
 barcodes <- unique(repDT$Barcode)
 
 ```
@@ -41,44 +41,33 @@ barcodes <- unique(repDT$Barcode)
 
 ```{r PLK1controlsAnalysis,  fig.width=8, fig.height=6}
 
-setkey(cDT,GeneSymbol)
-DT <- cDT[c("PLK1","NegCtrl")]
-DT <- DT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-colNames <- c("Barcode", "CellLine", "Plate","ZPrimeRobust")
-DT <- unique(DT[,colNames, with=FALSE])
+
+colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
+wnfDT <- unique(wDT[,colNames, with=FALSE])
+setkey(wnfDT,GeneSymbol)
+wnfDT <- wnfDT[c("PLK1","NegCtrl")]
+wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine","Plate", "ZPrimeRobust","ZPrimeOriginal","ZPrimeFixsd","ZPrimeFixsd")
+DT <- unique(wnfDT[,colNames, with=FALSE])
 
 p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=factor(Plate)))+
   geom_point(size = 5)+
   coord_cartesian(ylim=c(-5,1))+
   geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
-    guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
   xlab("")+ylab("Robust Z Prime")+
-  ggtitle("Robust Z Prime Factors (cell level data)")+
+  ggtitle("Robust Z Prime Factors")+
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)
 
-colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
-wnfDT <- unique(wDT[,colNames, with=FALSE])
-wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-colNames <- c("Barcode", "CellLine", "ZPrimeRobust")
-wnfDT <- unique(wnfDT[,colNames, with=FALSE])
 
-p <- ggplot(wnfDT, aes(x=factor(Barcode), y=ZPrimeRobust, colour=CellLine))+
-  geom_point(size = 5)+
-  coord_cartesian(ylim=c(-5,1))+
-  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
-  ggtitle("Robust Z Prime Factors (well summarized)")+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
-#print(p)
+```
 
-setkey(wDT,GeneSymbol)
-DT <- wDT[c("PLK1","NegCtrl")]
-colNames <- c("Barcode", "CellLine", "WellCellCount","Plate", "GeneSymbol")
-DT <- DT[,colNames,with=FALSE]
+```{r PLK1DensityPlots,  fig.width=8, fig.height=14}
 
-p <- ggplot(DT, aes(x=WellCellCount, fill = GeneSymbol))+
+p <- ggplot(wnfDT, aes(x=WellCellCount, fill = GeneSymbol))+
   geom_density(alpha=.5)+   
   ggtitle(paste("Cell Count Controls Density Analysis for Atwaters Plates"))+
   xlab("")+ylab("Cell Count Density")+
@@ -91,19 +80,19 @@ print(p)
 
 
 
-```{r WCC_byCellLine, fig.width=8,fig.height=12, eval=TRUE}
+```{r WCC_byCellLine, fig.width=8,fig.height=20, eval=TRUE}
 dt <- wDT[wDT$GeneSymbol %in% c("NegCtrl","CSCtrlA","CSCtrlB","CSCtrlC","CSCtrlD"),]
 dt$CB <- paste(dt$CellLine,dt$Barcode,sep=":")
 p <- ggplot(dt, aes(x=GeneSymbol, y=WellCellCount, colour=CB))+geom_boxplot()+
   ggtitle("Cell Count in Cell Seeding and NegCtrl Wells")+
   facet_wrap(~CellLine, ncol = 1, scales = "free_y")+
-  guides(colour=guide_legend(title="Cell Line:Barcode",ncol=2))+
+  guides(colour=guide_legend(title="Cell Line:Barcode",ncol=1))+
   theme(strip.text = element_text(size = rel(1)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.5)),legend.title=element_text(size = rel(1)))
 print(p)
 
 ```
 
-```{r UnivariateSignals , fig.width=7,fig.height=8, eval=TRUE}
+```{r UnivariateSignals , fig.width=8,fig.height=14, eval=TRUE}
 
 DT <- cDT[grepl("NegCtrl",cDT$GeneSymbol)]
 p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),colour=factor(DNA2N,labels=c("2N","4N"))))+
@@ -112,7 +101,7 @@ p <- ggplot(DT, aes(x=TotalIntensityDAPI,fill=factor(DNA2N,labels=c("2N","4N")),
   ggtitle("Total DAPI Distribution in Negative Control Wells")+
   facet_grid(CellLine~Plate, scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
   guides(fill=guide_legend("DNA 2N or 4N"),colour=FALSE)+
-  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(.3)))
+  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(1)),legend.title=element_text(size = rel(1)))
 print(p)
 
 p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa488Cyto+1)))+
@@ -120,7 +109,7 @@ p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa488Cyto+1)))+
   xlab("Mean Intensity KRT5 (logged)")+
   ggtitle("KRT5 Distribution")+
   facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
 p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa555Cyto+1)))+
@@ -129,7 +118,7 @@ p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa555Cyto+1)))+
   xlab("Mean Intensity KRT19 (logged)")+
   ggtitle("KRT19 Distribution (logged)")+
   facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
 p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa647+1)))+
@@ -137,7 +126,7 @@ p <- ggplot(DT, aes(x=log2(MeanIntensityAlexa647+1)))+
   xlab("Mean Intensity EdU (logged)")+
   ggtitle("EdU Distribution (logged)")+
   facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  theme(strip.text = element_text(size = rel(.4)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
 print(p)
 
 
@@ -189,7 +178,7 @@ for (cb in unique(repDT$CB)){
   DT$gsColours[DT$GeneSymbol=="NegCtrl"] <- "NegCtrl"
   DT$gsColours[DT$GeneSymbol %in% c("KRT5","KRT19")] <- "PosCtrl"
   DT$gsColours[grepl("CSCtrl",DT$GeneSymbol)] <- "CSCCtrl"
-    DT$gsColours <- factor(DT$gsColours,levels=c("Samples","CSCCtrl","NegCtrl","PosCtrl"),ordered=TRUE)
+  DT$gsColours <- factor(DT$gsColours,levels=c("Samples","CSCCtrl","NegCtrl","PosCtrl"),ordered=TRUE)
   p <- ggplot(DT, aes(x=factor(relevel(reorder(GeneSymbol, LineageRatioNorm, FUN=median),ref="NegCtrl")), y=LineageRatioNorm, fill=factor(gsColours)))+    
     geom_bar(stat="identity")+ 
     scale_fill_manual(values = c("gray30", muted("green"),muted("blue"), muted("red")))+
@@ -197,9 +186,9 @@ for (cb in unique(repDT$CB)){
     #geom_hline(yintercept=1, colour="blue")+
     ggtitle(paste("Lineage Ratio Normalized to NegCtrl in",cb))+
     xlab("")+ylab("")+
-        guides(fill=FALSE, colour=FALSE)+
+    guides(fill=FALSE, colour=FALSE)+
     facet_grid(CellLine~Barcode, scales="free")+
-    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+    theme(strip.text = element_text(size = rel(1)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   print(p)
 }
 
@@ -227,15 +216,15 @@ for (cb in unique(repDT$CB)){
     #geom_hline(yintercept=1, colour="blue")+
     ggtitle(paste("Edu Positive Proportion (logit) Normalized to NegCtrl in",cb))+
     xlab("")+ylab("")+
-        guides(fill=FALSE, colour=FALSE)+
+    guides(fill=FALSE, colour=FALSE)+
     facet_grid(CellLine~Barcode, scales="free")+
-    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+    theme(strip.text = element_text(size = rel(1)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.6)),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
   print(p)
 }
 
 ```
 
-```{r cellCycle}
+```{r cellCycle, fig.height=16}
 
 p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=TotalIntensityDAPI, y=log2(MeanIntensityAlexa647+1), colour=CellCycleState))+
   geom_point(size=.1, alpha=.4)+
@@ -277,7 +266,7 @@ p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityDAPI+1), y=l
   geom_point(size=.1)+
   geom_rug(col=rgb(.5,0,0,alpha=.01))+
   ggtitle("KRT5 vs. Mean DAPI in NegCtrl")+
-  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
   theme(strip.text = element_text(size = rel(.6)), axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.8)))
 suppressWarnings(print(p))
 
@@ -285,7 +274,7 @@ p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityAlexa488Cyto
   geom_point(size=.1)+
   geom_rug(col=rgb(.5,0,0,alpha=.01))+
   ggtitle("KRT19 vs. KRT5 in NegCtrl")+
-  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
   theme(strip.text = element_text(size = rel(.6)), axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.8)))
 print(p)
 
@@ -293,15 +282,15 @@ p <- ggplot(cDT[cDT$GeneSymbol=="NegCtrl"], aes(x=log2(MeanIntensityAlexa555Cyto
   geom_point(size=.1)+
   geom_rug(col=rgb(.5,0,0,alpha=.01))+
   ggtitle("EdU vs. KRT19 in NegCtrl")+
-  facet_grid(CellLine~Plate,scales = "free_y",labeller = labeller(Plate = label_both, CellLine = label_value))+
+  facet_grid(CellLine~Plate,labeller = labeller(Plate = label_both, CellLine = label_value))+
   theme(strip.text = element_text(size = rel(.6)), axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), axis.text.y = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(1)), plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.8)))
 print(p)
 
 ```
 
 
-```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=FALSE}
-
+```{r Heatmaps, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
+setkey(wDT,Barcode)
 for (barcode in unique(wDT$Barcode)){
   setkey(wDT,Barcode)
   DT <- wDT[barcode]
@@ -356,7 +345,7 @@ DT <- DT[DT$GeneSymbol %in% c("ESR1","THRA","PDE9A","SLC16A1","BCL2")]
 p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WellCellCount, fill=factor(Well)))+
   geom_bar(stat = "identity",position = "dodge")+
   xlab("")+ylab("")+
-   guides(fill=guide_legend(ncol=2))+
+  guides(fill=guide_legend(ncol=2))+
   facet_wrap(CellLine~Plate)+
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)

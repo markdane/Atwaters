@@ -237,10 +237,10 @@ gateOnlocalMinima <- function(x, ...){
 }
 
 #########
-rawDataVersion <- "v1.0"
+rawDataVersion <- "v1.1"
 loadcDT <- FALSE
 calcNeighbors <- FALSE
-mergeOmeroIDs <- FALSE
+mergeOmeroIDs <- TRUE
 neighborsThresh <- 5
 wedgeAngs <- 36
 
@@ -250,6 +250,7 @@ ss <- "lineageEdU"
 
 #Get the raw data file names
 rdf <- getWellSubsetFileNames("RawData")
+#rdf <- rdf[grep("MDAMB134VI",rdf$FilePaths),]
 imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata"),full.names = TRUE), value=TRUE)
 
 if(!loadcDT){
@@ -271,12 +272,11 @@ cDT <- rbindlist(cL)
   #Convert well index to an alphanumeric label
   cDT$Well <- wellAN(16,24)[cDT$Well]
   
+  #Filter out debris based on nuclear area
+  nuclearAreaThresh <- 200
+  cDT <- cDT[cDT$Area >nuclearAreaThresh,]
   #Count the cells at each well
   cDT<-cDT[,WellCellCount := .N, by="Barcode,Well"]
-  
-  #Filter out debris based on nuclear area
-  nuclearAreaThresh <- 50
-  cDT <- cDT[cDT$Area >nuclearAreaThresh,]
   
   cDT$TotalIntensityDAPI <- cDT$Area*cDT$MeanIntensityDAPI
   
@@ -309,7 +309,7 @@ cDT <- rbindlist(cL)
   #   cDT <- cDT[,DNA2N := kmeansDNACluster(TotalIntensityDAPI), by="Barcode"]
   #   cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode"]
   #   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
-  cDT <- cDT[,DNA2N := gateOnlocalMinima(TotalIntensityDAPI), by="Barcode"]
+  cDT <- cDT[,DNA2N := gateOnlocalMinima(TotalIntensityDAPI,probs=c(.05,.8)), by="Barcode"]
   cDT <- cDT[,DNA2NProportion := calc2NProportion(DNA2N),by="Barcode,Well"]
   cDT$DNA4NProportion <- 1-cDT$DNA2NProportion
   
