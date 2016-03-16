@@ -24,6 +24,17 @@ library(scales)
 
 source("WellPlateFunctions.R")
 
+#Calculate SSMD
+SSMDPlate <- function(df){
+  if(length(unique(df)))
+    mup <- mean(df$WellCellCount[df$GeneSymbol=="PLK1"], na.rm = TRUE)
+  sdp <- sd(df$WellCellCount[df$GeneSymbol=="PLK1"], na.rm = TRUE)
+  mun <- mean(df$WellCellCount[df$GeneSymbol=="NegCtrl"], na.rm = TRUE)
+  sdn <- sd(df$WellCellCount[df$GeneSymbol=="NegCtrl"], na.rm = TRUE)
+  SSMD <- (mup-mun)/sqrt(sdp^2+sdn^2)
+}
+
+
 cDT <- fread("AtwatersCell_v1.1.txt",showProgress=FALSE)
 cDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
 cDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
@@ -38,6 +49,34 @@ barcodes <- unique(repDT$Barcode)
 
 ```
 
+```{r, eval=FALSE}
+
+
+#Loess based normalisation of HTS data
+#Author: Mpindi John Patrick
+#Institute: University of Helsinki Finland
+#Date: 10/July/2015
+
+#Load some necessary libraries
+library(reshape)
+
+#Load data for a single plate as a data matrix
+#For a 384 well plate, the matrix dimension would be 16 by 24
+load("HTS_screen.RData")
+raw_plate_tbl <- melt(plate_matrix)
+colnames(raw_plate_tbl) <- c("row","col","rawIntensity") 
+raw_plate_tbl$row <- match(raw_plate_tbl$row,LETTERS[1:16])
+#Fit the loess model on the data.
+plate.loess_model <- loess(formula = rawIntensity ~ row + col , data = raw_plate_tbl, span=1)
+loess_fit <- plate.loess_model$fitted
+#Make data normalisation step for the current plate.
+loess_result <- plate.loess_model$y - (loess_fit - median(loess_fit))
+
+#**loess_result** variable has the normalised data for this plate.
+#Now you can proceed with further tests such as quality control tests.
+
+
+```
 
 ```{r PLK1controlsAnalysis,  fig.width=8, fig.height=6}
 
@@ -49,8 +88,15 @@ wnfDT <- wnfDT[c("PLK1","NegCtrl")]
 wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
 wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
 wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-colNames <- c("Barcode", "CellLine","Plate", "ZPrimeRobust","ZPrimeOriginal","ZPrimeFixsd","ZPrimeFixsd")
+wnfDT <- wnfDT[,SSMD := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+colNames <- c("Barcode", "CellLine","Plate", "ZPrimeRobust","ZPrimeOriginal","ZPrimeFixsd","ZPrimeFixsd","ZPrimeRobustLoess","SSMD")
+calcZPrimeLoess <- function(dt, method="original", posCtrl="PLK1"){
+  imageHTS::zprime(dt[GeneSymbol=="NegCtrl",WellCellCountLoessNorm],dt[GeneSymbol==posCtrl,WellCellCountLoessNorm], method)
+}
+wnfDT <- wnfDT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+
 DT <- unique(wnfDT[,colNames, with=FALSE])
+
 
 p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=factor(Plate)))+
   geom_point(size = 5)+
@@ -62,6 +108,25 @@ p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=f
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)
 
+p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("Robust Z Prime")+
+  ggtitle("Robust Z Prime Factors on Loess Normed WCC")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=SSMD, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  #coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = -3)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("SSMD")+
+  ggtitle("SSMD QA Values")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
 
 ```
 
@@ -310,6 +375,27 @@ for (barcode in unique(wDT$Barcode)){
 
 ```
 
+```{r HeatmapsWCCLoess, echo=FALSE, fig.width=7,fig.height=3, eval=TRUE}
+setkey(wDT,Barcode)
+for (barcode in unique(wDT$Barcode)){
+  setkey(wDT,Barcode)
+  DT <- wDT[barcode]
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=WellCellCountLoessNorm))+
+    geom_point(size=4)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count (norm)", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Loess Normalized Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+}
+
+```
+
 
 ```{r Layout, echo=FALSE, fig.width=8,fig.height=3, eval=FALSE}
 
@@ -354,3 +440,19 @@ print(p)
 
 ```
 
+```{r QARank}
+
+df <- unique(wnfDT[,list(CellLine,Plate,Barcode,ZPrimeRobust,SSMD)])
+df$QA <- "Low"
+
+df$QA[(df$ZPrimeRobust > -2)] <- "Medium"
+df$QA[(df$SSMD < -2)] <- "Medium"
+
+df$QA[df$SSMD < -3] <- "High"
+df$QA[df$ZPrimeRobust > 0] <- "High"
+
+setkey(df,CellLine,QA)
+
+write.csv(df, "AtwaterQABinning.csv",row.names = FALSE)
+
+```

@@ -236,6 +236,8 @@ gateOnlocalMinima <- function(x, ...){
   return(cluster)
 }
 
+
+
 #########
 rawDataVersion <- "v1.1"
 loadcDT <- FALSE
@@ -255,7 +257,7 @@ imageURLFiles <- grep("imageIDs",dir(paste0("./Metadata"),full.names = TRUE), va
 
 if(!loadcDT){
   #Combine raw data from each plate
- cL <- mclapply(unique(rdf$Barcode), function(barcode, df){
+  cL <- mclapply(unique(rdf$Barcode), function(barcode, df){
     bdf <- df[df$Barcode==barcode,]
     bDT <- stitchWellData(fs=bdf)
     if(mergeOmeroIDs){
@@ -268,7 +270,7 @@ if(!loadcDT){
     return(bDT)
   }, df=rdf, mc.cores = detectCores())
   
-cDT <- rbindlist(cL)
+  cDT <- rbindlist(cL)
   #Convert well index to an alphanumeric label
   cDT$Well <- wellAN(16,24)[cDT$Well]
   
@@ -401,8 +403,12 @@ mDT <- unique(cDT[,c("Barcode","Well",setdiff(colnames(cDT),c(wNames,"X","Y","Po
 setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT]
 
+#Lormalize the signals within each plate by subtracting the fitted loess value
+wDT <- loessNormalize(dt<-wDT,signalNames=c("WellCellCount"), span=.1)
+
+
 #Normalize WellCellCount to the NegCtrls
-wDT <- wDT[,WellCellCountNorm := normToNegCtrl(.SD), by="Barcode", .SDcols=c("WellCellCount","GeneSymbol")]
+wDT <- wDT[,WellCellCountNorm := normToNegCtrl(.SD), by="Barcode", .SDcols=c("WellCellCount","GeneSymbol","WellCellCountLoessNorm")]
 
 #Normalize LineageRatio to the NegCtrls
 wDT <- wDT[,LineageRatioNorm := normToLogNegCtrl(.SD), by="Barcode", .SDcols=c("LineageRatio","GeneSymbol")]

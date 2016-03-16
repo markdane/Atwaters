@@ -1,0 +1,324 @@
+---
+title: "Atwaters siRNA Normalization Analysis"
+output: html_document
+date: '`r Sys.Date()`'
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8,
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r setup}
+library("ggplot2")
+library("data.table")
+library("MEMA")
+library("grid")
+library("knitr")
+library("gplots")
+library("RColorBrewer")
+library("DT")
+library("d3heatmap")
+library("plotly")
+library(scales)
+
+source("WellPlateFunctions.R")
+
+#Calculate SSMD
+SSMDPlate <- function(df){
+  if(length(unique(df)))
+    mup <- mean(df$WellCellCount[df$GeneSymbol=="PLK1"], na.rm = TRUE)
+  sdp <- sd(df$WellCellCount[df$GeneSymbol=="PLK1"], na.rm = TRUE)
+  mun <- mean(df$WellCellCount[df$GeneSymbol=="NegCtrl"], na.rm = TRUE)
+  sdn <- sd(df$WellCellCount[df$GeneSymbol=="NegCtrl"], na.rm = TRUE)
+  SSMD <- (mup-mun)/sqrt(sdp^2+sdn^2)
+}
+
+
+
+calcZPrimeLoess <- function(dt, method="original", posCtrl="PLK1"){
+  imageHTS::zprime(dt[GeneSymbol=="NegCtrl",WellCellCountLoessNorm],dt[GeneSymbol==posCtrl,WellCellCountLoessNorm], method)
+}
+
+wDT <- fread("AtwatersWell_v1.1.txt")
+wDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+wDT$OmeroThumbnailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_thumbnail/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+wDT$OmeroImageURL <- paste0('<a href="https://omero.ohsu.edu/webclient/render_image/',wDT$ImageID,'/"',' target="_blank">Omero</a>')
+
+repDT <- fread("AtwatersRep_v1.1.txt",showProgress=FALSE)
+barcodes <- unique(repDT$Barcode)[1]
+```
+```{r filter, echo=TRUE}
+#Manually filter out selected rows of poor quality
+# AT384P20038 (ZR75B): rows C and D have very low cell counts
+# AT384P10037 (ZR75B): rows C and D have very low cell counts
+# AT384P10049 (HCC38): columns 12 and 13 have missing cells
+wDT <- wDT[!(grepl("AT384P10037",wDT$Barcode) & grepl("^3$|^4$",wDT$Row)),]
+wDT <- wDT[!(grepl("AT384P20038",wDT$Barcode) & grepl("^3$|^4$",wDT$Row)),]
+wDT <- wDT[!(grepl("AT384P10049",wDT$Barcode) & grepl("^12$|^13$",wDT$Column)),]
+
+```
+
+
+```{r loessNorm}
+
+span=.05
+
+wDT <- loessNormalize(wDT, signalNames="WellCellCount", span=span)
+
+```
+
+###Loess Normalization
+
+The Well Cell Count is loess normalized within each plate using the following method:
+
+Calculate the m~target~ values which are the median Well Cell Counts of the replicates of each siRNA or control  
+Calculate the residuals by subtracting m~target~ from each Well Cell Count value  
+Fit a loess model to the residuals  
+At each well, subtract the fitted loess value from the Well Cell Count  
+
+The loess span parameter is set to `r span` for this run of the analysis.
+
+```{r PLK1controlsAnalysis,  fig.width=8, fig.height=6, eval=FALSE}
+
+
+colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
+wnfDT <- unique(wDT[,colNames, with=FALSE])
+setkey(wnfDT,GeneSymbol)
+wnfDT <- wnfDT[c("PLK1","NegCtrl")]
+wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,SSMD := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+wnfDT <- wnfDT[,SSMDLoess := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+colNames <- c("Barcode", "CellLine","Plate", "ZPrimeRobust","ZPrimeOriginal","ZPrimeFixsd","ZPrimeFixsd","ZPrimeRobustLoess","SSMD","SSMDLoess")
+
+wnfDT <- wnfDT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+
+DT <- unique(wnfDT[,colNames, with=FALSE])
+
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("Robust Z Prime")+
+  ggtitle("Robust Z Prime Factors")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("Robust Z Prime")+
+  ggtitle("Robust Z Prime Factors on Loess Normed WCC")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=SSMD, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-15,1))+
+  geom_hline(yintercept = -3)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("SSMD")+
+  ggtitle("SSMD QA Values")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=SSMDLoess, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-15,1))+
+  geom_hline(yintercept = -3)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("SSMD")+
+  ggtitle("SSMD QA Values on Loess Normalized WCC")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+
+
+```
+
+```{r HeatmapsWCCLoess, echo=FALSE, fig.width=4,fig.height=2, eval=TRUE}
+setkey(wDT,Barcode)
+for (barcode in unique(wDT$Barcode)){
+  setkey(wDT,Barcode)
+  DT <- wDT[barcode]
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=WellCellCount))+
+    geom_point(size=2)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WellCellCount))+
+    geom_boxplot()+
+    ggtitle(paste("Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=mt))+
+    geom_point(size=2)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count Medians", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Well Cell Count Medians for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=mt))+
+    geom_boxplot()+
+    ggtitle(paste("Well Cell Count Medians for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=WCCRes))+
+    geom_point(size=2)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count Residuals", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Well Cell Count Residuals for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WCCRes))+
+    geom_boxplot()+
+    ggtitle(paste("Well Cell Count Residuals for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=WCCResFitted))+
+    geom_point(size=2)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count Residuals Model", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Well Cell Count Residuals Loess Model for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WCCResFitted))+
+    geom_boxplot()+
+    ggtitle(paste("Well Cell Count Residuals Model for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=Column, y=Row, colour=WellCellCountLoessNorm))+
+    geom_point(size=2)+
+    ylim(16,1)+
+    scale_x_continuous(breaks=c(1:24))+
+    scale_colour_gradient(low = "white", high = "red")+
+    guides(colour = guide_legend("Well Cell Count (norm)", keywidth = .5, keyheight = .5))+
+    ggtitle(paste("Loess Normalized Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+  p <- ggplot(DT, aes(x=factor(GeneSymbol), y=WellCellCountLoessNorm))+
+    geom_boxplot()+
+    ggtitle(paste("Loess Normalzied Well Cell Count for",unique(DT$CellLine), "cells in plate",unique(DT$Barcode)))+
+    xlab("")+ylab("")+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size=rel(.5)),plot.title = element_text(size = rel(.6)),legend.text=element_text(size = rel(.3)),legend.title=element_text(size = rel(.3)))
+  suppressWarnings(print(p))
+  
+}
+
+```
+
+
+```{r rawZprimeSSMD}
+
+  colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
+  DT <- unique(wDT[,colNames, with=FALSE])
+  DT <- DT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+  DT <- DT[,SSMD := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+  DT <- unique(DT[,list(Barcode,CellLine,Plate,ZPrimeRobust,SSMD)])
+
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-5,1))+
+  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("Robust Z Prime")+
+  ggtitle("Robust Z Prime Factors")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+
+p <- ggplot(DT, aes(x=factor(CellLine), y=SSMD, colour=CellLine, shape=factor(Plate)))+
+  geom_point(size = 5)+
+  coord_cartesian(ylim=c(-15,1))+
+  geom_hline(yintercept = -3)+
+  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+  xlab("")+ylab("SSMD")+
+  ggtitle("SSMD QA Values")+
+  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+print(p)
+
+cat(paste("Plates with Z Prime Robust factor >= 0 =",sum(DT$ZPrimeRobust>=0),"\n"))
+cat(paste("Plates with SSMD <= -3 =",sum(DT$SSMD <= -3, na.rm=TRUE),"\n"))
+
+```
+
+###Explore Span Values
+
+
+
+```{r loessNormSpanRange}
+
+for(span in c(.02, .05, .1,1)){
+  colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
+  DT <- unique(wDT[,colNames, with=FALSE])
+  DT <- loessNormalize(wDT, signalNames="WellCellCount", span=span)
+  DT <- DT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+  DT <- DT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+  DT <- DT[,SSMD := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
+  DT <- DT[,SSMDLoess := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+  DT <- unique(DT[,list(Barcode,CellLine,Plate,ZPrimeRobust,ZPrimeRobustLoess,SSMD,SSMDLoess)])
+  
+ 
+  p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, colour=CellLine, shape=factor(Plate)))+
+    geom_point(size = 5)+
+    coord_cartesian(ylim=c(-5,1))+
+    geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+    guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+    xlab("")+ylab("Robust Z Prime")+
+    ggtitle(paste("Robust Z Prime Factors on Loess Normed WCC, Span=",span))+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+  print(p)
+  
+  
+  p <- ggplot(DT, aes(x=factor(CellLine), y=SSMDLoess, colour=CellLine, shape=factor(Plate)))+
+    geom_point(size = 5)+
+    coord_cartesian(ylim=c(-15,1))+
+    geom_hline(yintercept = -3)+
+    guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+    xlab("")+ylab("SSMD")+
+    ggtitle(paste("SSMD QA Values on Loess Normalized WCC, Span=",span))+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+  print(p)
+  cat(paste("Plates with Z Prime Robust factor >= 0 on Loess Normed WCC =",sum(DT$ZPrimeRobustLoess>=0),"for span=",span,"\n"))
+  cat(paste("Plates with SSMD <= -2 on Loess Normed WCC =",sum(DT$SSMDLoess<= -2),"for span=",span,"\n"))
+cat(paste("Plates with SSMD <= -3 on Loess Normed WCC =",sum(DT$SSMDLoess<= -3),"for span=",span,"\n"))
+
+}
+```
