@@ -131,14 +131,18 @@ Using the raw signal values, there are `r sum(DT$ZPrimeRobust>=0)` plates with Z
 ####Plates Passing QA on Normalized Data  
 Using the a span of `r span` and the loess normalization, there are `r sum(DT$ZPrimeRobustLoess>=0)` plates with Z Prime Robust factor >= 0, `r sum(DT$SSMDLoess <= -3, na.rm=TRUE)` plates with SSMD <= -3 and `r sum(DT$SSMDLoess <= -2, na.rm=TRUE)` plates with SSMD <= -2.
 
-The cell lines passing with Z Prime factor values greater than or equal to 0 are:
-`r unique(DT$CellLine[DT$ZPrimeRobustLoess>=0])`
+The cell lines and plates passing QA with Z Prime factor values greater than or equal to 0 are:
+`r unique(wDT$CellLine[wDT$ZPrimeRobustLoess>=0])`  
 
-The cell lines passing with SSMD values less than or equal to -3 are:
-`r unique(DT$CellLine[DT$SSMDLoess <= -3])`
+`r unique(wDT$Barcode[wDT$ZPrimeRobustLoess>=0])`
 
-The cell lines passing with SSMD values less than or equal to -2 are:
-`r unique(DT$CellLine[DT$SSMDLoess <= -2])`
+The cell lines and plates passing QA with SSMD values less than or equal to -3 are:
+`r unique(wDT$CellLine[wDT$SSMDLoess <= -3])`  
+`r unique(wDT$Barcode[wDT$SSMDLoess <= -3])`  
+
+The cell lines and plates passing QA with SSMD values less than or equal to -2 are:
+`r unique(wDT$CellLine[wDT$SSMDLoess <= -2])`  
+`r unique(wDT$Barcode[wDT$SSMDLoess <= -2])`  
 
 
 ```{r plotQAMetrics, fig.width=4, fig.height=4}
