@@ -34,6 +34,9 @@ SSMDPlate <- function(df){
   SSMD <- (mup-mun)/sqrt(sdp^2+sdn^2)
 }
 
+calcZPrimeLoess <- function(dt, method="original", posCtrl="PLK1"){
+  imageHTS::zprime(dt[GeneSymbol=="NegCtrl",WellCellCountLoessNorm],dt[GeneSymbol==posCtrl,WellCellCountLoessNorm], method)
+  
 
 cDT <- fread("AtwatersCell_v1.1.txt",showProgress=FALSE)
 cDT$OmeroDetailURL <- paste0('<a href="https://omero.ohsu.edu/webclient/img_detail/',cDT$ImageID,'/"',' target="_blank">Omero</a>')
@@ -80,20 +83,15 @@ loess_result <- plate.loess_model$y - (loess_fit - median(loess_fit))
 
 ```{r PLK1controlsAnalysis,  fig.width=8, fig.height=6}
 
-
 colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
 wnfDT <- unique(wDT[,colNames, with=FALSE])
 setkey(wnfDT,GeneSymbol)
 wnfDT <- wnfDT[c("PLK1","NegCtrl")]
-wnfDT <- wnfDT[,ZPrimeOriginal := calcZPrime(.SD, method="original"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-wnfDT <- wnfDT[,ZPrimeRobust := calcZPrime(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
-wnfDT <- wnfDT[,ZPrimeFixsd := calcZPrime(.SD, method="fixsd"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
 wnfDT <- wnfDT[,SSMD := SSMDPlate(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
 colNames <- c("Barcode", "CellLine","Plate", "ZPrimeRobust","ZPrimeOriginal","ZPrimeFixsd","ZPrimeFixsd","ZPrimeRobustLoess","SSMD")
-calcZPrimeLoess <- function(dt, method="original", posCtrl="PLK1"){
-  imageHTS::zprime(dt[GeneSymbol=="NegCtrl",WellCellCountLoessNorm],dt[GeneSymbol==posCtrl,WellCellCountLoessNorm], method)
+
 }
-wnfDT <- wnfDT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
+wnfDT <- wnfDT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCount")]
 
 DT <- unique(wnfDT[,colNames, with=FALSE])
 
@@ -108,15 +106,6 @@ p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobust, colour=CellLine, shape=f
   theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
 print(p)
 
-p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, colour=CellLine, shape=factor(Plate)))+
-  geom_point(size = 5)+
-  coord_cartesian(ylim=c(-5,1))+
-  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
-  guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
-  xlab("")+ylab("Robust Z Prime")+
-  ggtitle("Robust Z Prime Factors on Loess Normed WCC")+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(1.5)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
-print(p)
 
 p <- ggplot(DT, aes(x=factor(CellLine), y=SSMD, colour=CellLine, shape=factor(Plate)))+
   geom_point(size = 5)+

@@ -236,6 +236,31 @@ gateOnlocalMinima <- function(x, ...){
   return(cluster)
 }
 
+#Loess normalization of WellCellCount
+loessNormalize <- function(dt, signalNames, span=1){
+  #Normalize a data.table of signals 
+  #There must be barcode and well columns
+  if(!(any(grepl("Barcode",colnames(dt)))&any(grepl("Row",colnames(dt)))&any(grepl("Column",colnames(dt))))) stop("There must be Barcode, Column and Row and columns")
+  
+  dtbList <-lapply(unique(dt$Barcode),function(barcode){
+    setkey(dt,Barcode)
+    dtb <- dt[barcode]
+    #ToDo: Either make the code general or specific
+    sigNormedList <- lapply(signalNames, function(signalName, dtb){
+      #get mtarget values for each gene symbol
+      setnames(dtb,signalName,"Value")
+      dtb <- dtb[,mt := as.numeric(median(Value, na.rm=TRUE)), by=GeneSymbol]
+      dtb <- dtb[,WCCRes := as.numeric(Value-mt)]
+      dtb$WCCResFitted <-loess(WCCRes~Row+Column, dtb, span=span)$fitted
+      dtb <- dtb[,WellCellCountLoessNorm := as.numeric(Value-WCCResFitted)]
+      setnames(dtb,"Value",signalName)
+      return(dtb)
+    },dtb=dtb)
+    dtb<- rbindlist(sigNormedList)
+  })
+  dt <-rbindlist(dtbList)
+  return(dt)
+}
 
 
 #########
@@ -404,8 +429,7 @@ setkey(mDT,Barcode,Well)
 wDT <- mDT[wDT]
 
 #Lormalize the signals within each plate by subtracting the fitted loess value
-wDT <- loessNormalize(dt<-wDT,signalNames=c("WellCellCount"), span=.1)
-
+wDT <- loessNormalize(dt=wDT,signalNames=c("WellCellCount"), span=.05)
 
 #Normalize WellCellCount to the NegCtrls
 wDT <- wDT[,WellCellCountNorm := normToNegCtrl(.SD), by="Barcode", .SDcols=c("WellCellCount","GeneSymbol","WellCellCountLoessNorm")]
