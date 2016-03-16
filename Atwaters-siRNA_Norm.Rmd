@@ -75,7 +75,9 @@ wDT <- wDT[!(grepl("AT384P10049",wDT$Barcode) & grepl("^12$|^13$",wDT$Column)),]
 ```{r loessNorm, eval=TRUE}
 
 span=.05
+colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
 
+wDT <- unique(wDT[,colNames, with=FALSE])
 wDT <- loessNormalize(wDT, signalNames="WellCellCount", span=span)
 
 ```
@@ -128,6 +130,15 @@ Using the raw signal values, there are `r sum(DT$ZPrimeRobust>=0)` plates with Z
 
 ####Plates Passing QA on Normalized Data  
 Using the a span of `r span` and the loess normalization, there are `r sum(DT$ZPrimeRobustLoess>=0)` plates with Z Prime Robust factor >= 0, `r sum(DT$SSMDLoess <= -3, na.rm=TRUE)` plates with SSMD <= -3 and `r sum(DT$SSMDLoess <= -2, na.rm=TRUE)` plates with SSMD <= -2.
+
+The cell lines passing with Z Prime factor values greater than or equal to 0 are:
+`r unique(DT$CellLine[DT$ZPrimeRobustLoess>=0])`
+
+The cell lines passing with SSMD values less than or equal to -3 are:
+`r unique(DT$CellLine[DT$SSMDLoess <= -3])`
+
+The cell lines passing with SSMD values less than or equal to -2 are:
+`r unique(DT$CellLine[DT$SSMDLoess <= -2])`
 
 
 ```{r plotQAMetrics, fig.width=4, fig.height=4}
@@ -298,38 +309,39 @@ The following plots show the results of loess normalizing at various span values
 
 for(span in c(.02, .05, .1,1)){
   colNames <- grep("Omero|Image|Field",colnames(wDT),value=TRUE,invert=TRUE)
-  DT <- unique(wDT[,colNames, with=FALSE])
+  DT <- unique(wDT[,colNames, with=FALSE], by = NULL)
   DT <- loessNormalize(wDT, signalNames="WellCellCount", span=span)
   DT <- DT[,ZPrimeRobustLoess := calcZPrimeLoess(.SD, method="robust"), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
   DT <- DT[,SSMDLoess := SSMDPlateLoess(.SD), by="Barcode", .SDcols=c("GeneSymbol","WellCellCountLoessNorm")]
   DT <- unique(DT[,list(Barcode,CellLine,Plate,ZPrimeRobustLoess,SSMDLoess)])
-
-p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, shape=factor(Plate)))+
-  geom_point(size = 5)+
-  coord_cartesian(ylim=c(-5,1))+
-  geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
-  #guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
-  guides(shape=FALSE)+
-  xlab("")+ylab("Robust Z Prime")+
-  ggtitle(paste("Robust Z Prime Factors from Loess Normalized Well Cell Count"))+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
-print(p)
-
-
-p <- ggplot(DT, aes(x=factor(CellLine), y=SSMDLoess, shape=factor(Plate)))+
-  geom_point(size = 5)+
-  coord_cartesian(ylim=c(-15,1))+
-  geom_hline(yintercept = -3)+
-  guides(shape=guide_legend(title = "Plate",override.aes = list(size=2)))+
-  xlab("")+ylab("SSMD")+
-  ggtitle("SSMD QA Values from Loess Normalized Well Cell Count")+
-  theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)), legend.text=element_text(size = rel(.4)),legend.title=element_text(size = rel(.4)), legend.position="bottom", strip.text = element_text(size = rel(.4)))
-print(p)
- 
- 
-  cat(paste("Plates with Z Prime Robust factor >= 0 on Loess Normed WCC =",sum(DT$ZPrimeRobustLoess>=0),"for span=",span,"\n"))
-  cat(paste("Plates with SSMD <= -2 on Loess Normed WCC =",sum(DT$SSMDLoess<= -2),"for span=",span,"\n"))
-  cat(paste("Plates with SSMD <= -3 on Loess Normed WCC =",sum(DT$SSMDLoess<= -3),"for span=",span,"\n"))
+  
+  p <- ggplot(DT, aes(x=factor(CellLine), y=ZPrimeRobustLoess, shape=factor(Plate)))+
+    geom_point(size = 5)+
+    coord_cartesian(ylim=c(-5,1))+
+    geom_hline(yintercept = 1)+geom_hline(yintercept = .5)+
+    #guides(colour=guide_legend(title = "Cell Line",ncol=2), shape=guide_legend(title = "Plate"))+
+    guides(shape=FALSE)+
+    xlab("")+ylab("Robust Z Prime")+
+    ggtitle(paste("Robust Z Prime Factors from Loess Normalized Well Cell Count"))+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)),legend.text=element_text(size = rel(.6)),legend.title=element_text(size = rel(.6)), strip.text = element_text(size = rel(.4)))
+  print(p)
+  
+  
+  p <- ggplot(DT, aes(x=factor(CellLine), y=SSMDLoess, shape=factor(Plate)))+
+    geom_point(size = 5)+
+    coord_cartesian(ylim=c(-15,1))+
+    geom_hline(yintercept = -3)+
+    guides(shape=guide_legend(title = "Plate",override.aes = list(size=2)))+
+    xlab("")+ylab("SSMD")+
+    ggtitle("SSMD QA Values from Loess Normalized Well Cell Count")+
+    theme(strip.text = element_text(size = rel(.5)), axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),plot.title = element_text(size = rel(.8)), legend.text=element_text(size = rel(.4)),legend.title=element_text(size = rel(.4)), legend.position="bottom", strip.text = element_text(size = rel(.4)))
+  print(p)
+  
+  
+  cat(paste("Plates with Z Prime Robust factor >= 0 on Loess Normed WCC =",sum(DT$ZPrimeRobustLoess>=0, na.rm=TRUE),"for span=",span,"\n"))
+  cat(paste("Plates with SSMD <= -3 on Loess Normed WCC =",sum(DT$SSMDLoess<= -3, na.rm=TRUE),"for span=",span,"\n"))
+  cat(paste("Plates with SSMD <= -2 on Loess Normed WCC =",sum(DT$SSMDLoess<= -2, na.rm=TRUE),"for span=",span,"\n"))
+  
   
 }
 ```
